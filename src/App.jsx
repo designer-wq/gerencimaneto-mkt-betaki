@@ -3,6 +3,7 @@ import { db } from './firebase'
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
 import { apiEnabled, api } from './api'
 const readLS = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)||'null'); return Array.isArray(v) ? v : def } catch { return def } }
+const readObj = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)||'null'); return v && typeof v === 'object' && !Array.isArray(v) ? v : def } catch { return def } }
 const writeLS = (k, v) => localStorage.setItem(k, JSON.stringify(v))
 
 const ESTADOS = ["Aberta", "Em Progresso", "Concluída"]
@@ -10,6 +11,17 @@ const statusLabel = s => s === "Aberta" ? "Aberta" : s === "Em Progresso" ? "Em 
 const statusDot = s => s === "Aberta" ? "🟡" : s === "Em Progresso" ? "🔵" : s === "Concluída" ? "🟢" : "•"
 const statusWithDot = s => `${statusDot(s)} ${statusLabel(s)}`
 const statusClass = s => s === 'Aberta' ? 'st-open' : s === 'Em Progresso' ? 'st-progress' : 'st-done'
+
+const hexToRgb = (hex) => {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex||'')
+  return m ? { r: parseInt(m[1],16), g: parseInt(m[2],16), b: parseInt(m[3],16) } : { r:17,g:24,b:39 }
+}
+const contrastText = (hex) => {
+  const {r,g,b} = hexToRgb(hex)
+  const yiq = (r*299 + g*587 + b*114)/1000
+  return yiq >= 128 ? '#111' : '#fff'
+}
+const statusColor = (s, colors) => colors?.[s] || (s==='Aberta'?'#f59e0b': s==='Em Progresso'?'#3b82f6': s==='Concluída'?'#10b981':'#3b82f6')
 
 const hojeISO = () => {
   const d = new Date(); const z = n => String(n).padStart(2, '0')
@@ -80,7 +92,7 @@ function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus 
             </select>
           </div>
           <div className="form-row"><label>Status</label>
-            <select className={`status-select ${filtros.status?statusClass(filtros.status):''}`} value={filtros.status} onChange={e=>set('status', e.target.value)}>
+            <select className="status-select" value={filtros.status} onChange={e=>set('status', e.target.value)}>
               <option value="">Status</option>
               {cadStatus.map(s=> <option key={s} value={s}>{statusWithDot(s)}</option>)}
             </select>
@@ -122,7 +134,7 @@ function aplicarFiltros(items, f) {
   })
 }
 
-function TableView({ items, onEdit, onStatus, cadStatus, onDelete }) {
+function TableView({ items, onEdit, onStatus, cadStatus, onDelete, hasMore, showMore, canCollapse, showLess, shown, total }) {
   return (
     <div className="table">
       <table>
@@ -144,7 +156,7 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete }) {
               <td className="name">{it.titulo}</td>
               <td>{it.designer}</td>
               <td>
-                <select className={`status-select ${statusClass(it.status)}`} value={it.status} onChange={e=>onStatus(it.id, e.target.value)} onClick={e=>e.stopPropagation()}>
+                <select className="status-select" value={it.status} onChange={e=>onStatus(it.id, e.target.value)} onClick={e=>e.stopPropagation()}>
                   {cadStatus.map(s=> <option key={s} value={s}>{statusWithDot(s)}</option>)}
                 </select>
               </td>
@@ -167,6 +179,10 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete }) {
           ))}
         </tbody>
       </table>
+      <div className="table-footer">
+        {hasMore && <button className="primary" onClick={showMore}>Mostrar mais demandas</button>}
+        {canCollapse && <button className="primary" onClick={showLess}>Mostrar menos demandas</button>}
+      </div>
     </div>
   )
 }
@@ -185,7 +201,7 @@ function BoardView({ items, onEdit, onStatus, cadStatus, onDelete }) {
                   <div className="acts" />
                 </div>
                 <div className="meta">{it.designer} • {it.tipoMidia}{it.plataforma?` • ${it.plataforma}`:''}</div>
-                <select className={`status-select ${statusClass(it.status)}`} value={it.status} onChange={e=>onStatus(it.id, e.target.value)} onClick={e=>e.stopPropagation()}>
+                <select className="status-select" value={it.status} onChange={e=>onStatus(it.id, e.target.value)} onClick={e=>e.stopPropagation()}>
                   {cadStatus.map(s=> <option key={s} value={s}>{statusWithDot(s)}</option>)}
                 </select>
               </div>
@@ -255,7 +271,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
   if (!open) return null
   const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, plataforma, arquivos, descricao }) }
   return (
-    <div className="modal" onClick={onClose}>
+    <div className="modal" onClick={mode==='create'? undefined : onClose}>
       <div className="modal-dialog" onClick={e=>e.stopPropagation()}>
         <div className="modal-header">
           <div className="title">{mode==='create'? '➕ Nova demanda' : '✏️ Editar demanda'}</div>
@@ -287,12 +303,12 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
                 Promise.all(readers).then(arr => setArquivos(arr))
               }} />
             </div>
-            <div className="form-row"><label>Data de Criação</label><input type="date" value={dataCriacao} disabled /></div>
+            {mode!=='create' && <div className="form-row"><label>Data de Criação</label><input type="date" value={dataCriacao} disabled /></div>}
             <div className="form-row"><label>Data de Solicitação</label><input type="date" value={dataSolic} onChange={e=>setDataSolic(e.target.value)} disabled={mode==='create'} /></div>
           </div>
           <div className="form-row"><label>Descrição</label><textarea rows={3} value={descricao} onChange={e=>setDescricao(e.target.value)} /></div>
           <div className="modal-footer">
-            {mode==='edit' && <button className="danger" type="button" onClick={()=>{ onDelete(initial.id); onClose() }}>Excluir</button>}
+            {mode==='edit' && <button className="danger" type="button" onClick={()=>{ if (window.confirm('Confirmar exclusão desta demanda?')) { onDelete(initial.id); onClose() } }}>Excluir</button>}
             <button className="primary" type="submit">Salvar</button>
           </div>
         </form>
@@ -301,9 +317,10 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
   )
 }
 
-function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadDesigners, setCadDesigners, cadPlataformas, setCadPlataformas }) {
+function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadDesigners, setCadDesigners, cadPlataformas, setCadPlataformas, cadStatusColors, setCadStatusColors }) {
   const [tab, setTab] = useState('designer')
   const [novo, setNovo] = useState('')
+  const [novoCor, setNovoCor] = useState('#f59e0b')
   const lista = tab==='designer' ? cadDesigners : tab==='status' ? cadStatus : tab==='tipo' ? cadTipos : cadPlataformas
   const setLista = (arr) => {
     if (tab==='designer') setCadDesigners(arr)
@@ -311,7 +328,7 @@ function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadDesi
     else if (tab==='tipo') setCadTipos(arr)
     else setCadPlataformas(arr)
   }
-  const addItem = async () => { const v = novo.trim(); if (!v) return; if (lista.includes(v)) return; const arr = [...lista, v]; setLista(arr); setNovo(''); if (apiEnabled) await api.addCadastro(tab==='designer'?'designers':tab==='status'?'status':tab==='tipo'?'tipos':'plataformas', v) }
+  const addItem = async () => { const v = novo.trim(); if (!v) return; if (lista.includes(v)) return; const arr = [...lista, v]; setLista(arr); setNovo(''); if (tab==='status') setCadStatusColors(prev=> ({ ...prev, [v]: novoCor })); if (apiEnabled) await api.addCadastro(tab==='designer'?'designers':tab==='status'?'status':tab==='tipo'?'tipos':'plataformas', v) }
   const removeItem = async (v) => { const arr = lista.filter(x=>x!==v); setLista(arr); if (apiEnabled) await api.removeCadastro(tab==='designer'?'designers':tab==='status'?'status':tab==='tipo'?'tipos':'plataformas', v) }
   return (
     <div className="panel">
@@ -325,6 +342,7 @@ function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadDesi
         <label>{tab==='designer'?'Novo Designer':tab==='status'?'Novo Status':tab==='tipo'?'Novo Tipo':'Nova Plataforma'}</label>
         <div style={{display:'flex', gap:8}}>
           <input value={novo} onChange={e=>setNovo(e.target.value)} />
+          {tab==='status' && <input type="color" value={novoCor} onChange={e=>setNovoCor(e.target.value)} title="Cor" />}
           <button className="primary" onClick={addItem}>Adicionar</button>
         </div>
       </div>
@@ -332,8 +350,14 @@ function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadDesi
         {lista.length===0 ? <div className="empty">Sem itens</div> : (
           lista.map(v => (
             <div key={v} className="list-item" style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px',border:'1px solid var(--border)',borderRadius:8,background:'#0b0e12',marginBottom:6}}>
-              <div>{v}</div>
-              <button className="icon" onClick={()=>removeItem(v)}>🗑️</button>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                {tab==='status' && <span className="status-dot" style={{background: cadStatusColors[v] || '#3b82f6'}} />}
+                <div>{v}</div>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                {tab==='status' && <input type="color" value={cadStatusColors[v] || '#3b82f6'} onChange={e=> setCadStatusColors(prev=> ({ ...prev, [v]: e.target.value }))} />}
+                <button className="icon" onClick={()=>removeItem(v)}>🗑️</button>
+              </div>
             </div>
           ))
         )}
@@ -356,9 +380,14 @@ export default function App() {
   const [cadTipos, setCadTipos] = useState(readLS('cadTipos', ["Post","Story","Banner","Vídeo","Outro"]))
   const [cadDesigners, setCadDesigners] = useState(readLS('cadDesigners', []))
   const [cadPlataformas, setCadPlataformas] = useState(readLS('cadPlataformas', []))
+  const [cadStatusColors, setCadStatusColors] = useState(readObj('cadStatusColors', { Aberta:'#f59e0b', "Em Progresso":"#3b82f6", "Concluída":"#10b981" }))
   const designersFromDemandas = useMemo(()=> Array.from(new Set(demandas.map(x=>x.designer).filter(Boolean))).sort(), [demandas])
   const designers = useMemo(()=> Array.from(new Set([...cadDesigners, ...designersFromDemandas])).sort(), [cadDesigners, designersFromDemandas])
   const items = useMemo(()=> aplicarFiltros(demandas, filtros), [demandas, filtros])
+  const itemsSorted = useMemo(()=> items.slice().sort((a,b)=>{
+    const da = a.dataCriacao||''; const db = b.dataCriacao||''; const c = db.localeCompare(da); if (c!==0) return c; const ia = a.id||0; const ib = b.id||0; return ib - ia
+  }), [items])
+  const [tableLimit, setTableLimit] = useState(10)
   const [calRef, setCalRef] = useState(new Date())
 
   useEffect(()=>{ gravar(demandas) },[demandas])
@@ -366,6 +395,7 @@ export default function App() {
   useEffect(()=>{ writeLS('cadTipos', cadTipos) },[cadTipos])
   useEffect(()=>{ writeLS('cadDesigners', cadDesigners) },[cadDesigners])
   useEffect(()=>{ writeLS('cadPlataformas', cadPlataformas) },[cadPlataformas])
+  useEffect(()=>{ writeLS('cadStatusColors', cadStatusColors) },[cadStatusColors])
   useEffect(()=>{
     if (apiEnabled) {
       api.listDemandas().then(list => { if (Array.isArray(list)) setDemandas(list) })
@@ -419,7 +449,7 @@ export default function App() {
         <div className="app">
           <Header onNew={onNew} view={view} setView={setView} />
           {route==='demandas' && <FilterButton onOpen={()=>setFilterOpen(true)} view={view} setView={setView} filtros={filtros} setFiltros={setFiltros} />}
-          {route==='demandas' && view==='table' && <TableView items={items} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} />}
+          {route==='demandas' && view==='table' && <TableView items={itemsSorted.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} hasMore={itemsSorted.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsSorted.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsSorted.length)} total={itemsSorted.length} />}
           {route==='demandas' && view==='board' && <BoardView items={items} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} />}
           {route==='demandas' && view==='calendar' && (
           <div className="calendar-wrap">
@@ -440,7 +470,7 @@ export default function App() {
             </>
           )}
           {route==='cadastros' && (
-            <CadastrosView cadStatus={cadStatus} setCadStatus={setCadStatus} cadTipos={cadTipos} setCadTipos={setCadTipos} cadDesigners={cadDesigners} setCadDesigners={setCadDesigners} cadPlataformas={cadPlataformas} setCadPlataformas={setCadPlataformas} />
+            <CadastrosView cadStatus={cadStatus} setCadStatus={setCadStatus} cadTipos={cadTipos} setCadTipos={setCadTipos} cadDesigners={cadDesigners} setCadDesigners={setCadDesigners} cadPlataformas={cadPlataformas} setCadPlataformas={setCadPlataformas} cadStatusColors={cadStatusColors} setCadStatusColors={setCadStatusColors} />
           )}
           {route==='relatorios' && (
             <ReportsView demandas={demandas} designers={designers} />
@@ -468,7 +498,6 @@ function Sidebar({ route, setRoute }) {
  
 
 function ReportsView({ demandas, designers }) {
-  const [selDesigner, setSelDesigner] = useState('Todos Designers')
   const pad = n => String(n).padStart(2,'0')
   const toYMD = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`
   const toYM = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}`
@@ -480,125 +509,41 @@ function ReportsView({ demandas, designers }) {
     const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1)/7)
     return `${date.getUTCFullYear()}-W${pad(weekNo)}`
   }
-  const isTodos = selDesigner==='Todos Designers'
-  const filtraDesigner = it => isTodos ? true : it.designer === selDesigner
-  const onlySelected = entries => isTodos ? entries : entries.filter(([d])=> d===selDesigner)
-  const totalPorDesigner = () => {
-    const m = {}
-    designers.forEach(d => m[d]=0)
-    demandas.forEach(it => { const k = it.designer || 'Sem Designer'; m[k] = (m[k]||0)+1 })
-    return onlySelected(Object.entries(m))
-  }
-  const concluidasPorDesigner = () => {
-    const m = {}
-    designers.forEach(d => m[d]=0)
-    demandas.filter(it=>it.status==='Concluída').forEach(it => { const k = it.designer || 'Sem Designer'; m[k] = (m[k]||0)+1 })
-    return onlySelected(Object.entries(m))
-  }
-  const abertasPorDesigner = () => {
-    const m = {}
-    designers.forEach(d => m[d]=0)
-    demandas.filter(it=>it.status!=='Concluída').forEach(it => { const k = it.designer || 'Sem Designer'; m[k] = (m[k]||0)+1 })
-    return onlySelected(Object.entries(m))
-  }
+  const designersFixos = ['Felipe','Thaigo']
   const hoje = new Date()
-  const diaKeys = Array.from({length:30}, (_,i)=>{ const d=new Date(hoje); d.setDate(d.getDate()-i); return toYMD(d) }).reverse()
-  const porDia = () => {
-    const m = {}; diaKeys.forEach(k=>m[k]=0)
-    demandas.filter(filtraDesigner).forEach(it => { const k = it.dataSolicitacao; if (k in m) m[k]++ })
-    return Object.entries(m)
-  }
-  const semanaKeys = Array.from({length:8}, (_,i)=>{ const d=new Date(hoje); d.setDate(d.getDate()-7*i); return isoWeek(d) }).reverse()
-  const porSemana = () => {
-    const m = {}; semanaKeys.forEach(k=>m[k]=0)
-    demandas.filter(filtraDesigner).forEach(it => { const k = isoWeek(new Date(it.dataSolicitacao)); if (k in m) m[k]++ })
-    return Object.entries(m)
-  }
-  const porMes = () => {
-    const m = {}
-    demandas.filter(filtraDesigner).forEach(it => { const k = toYM(new Date(it.dataSolicitacao)); m[k] = (m[k]||0)+1 })
-    return Object.entries(m).sort((a,b)=> a[0].localeCompare(b[0]))
-  }
-  const designersSel = ['Todos Designers', ...designers]
-  const toChart = arr => arr.map(([label, value])=> ({ label, value }))
-  const ChartBars = ({ data, color }) => {
-    const max = Math.max(1, ...data.map(d=>d.value))
-    return (
-      <div className="chart">
-        {data.map(d => (
-          <div key={d.label} className="chart-row">
-            <div className="chart-label">{d.label}</div>
-            <div className="chart-bar">
-              <div className="chart-fill" style={{ width: `${(d.value/max)*100}%`, background: color||'var(--chart)' }} />
-              <div className="chart-value">{d.value}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    )
-  }
+  const hojeStr = toYMD(hoje)
+  const semanaKey = isoWeek(hoje)
+  const mesKey = toYM(hoje)
+  const mesPassadoKey = toYM(new Date(hoje.getFullYear(), hoje.getMonth()-1, 1))
+  const countBy = (designer, pred) => demandas.filter(x=> x.designer===designer && pred(x)).length
+  const rows = [
+    { label: 'Criados Hoje', get: d => countBy(d, x=> x.dataCriacao===hojeStr) },
+    { label: 'Criados na Semana', get: d => countBy(d, x=> isoWeek(new Date(x.dataCriacao))===semanaKey) },
+    { label: 'Criados no Mês', get: d => countBy(d, x=> toYM(new Date(x.dataCriacao))===mesKey) },
+    { label: 'Total Criado Mês Passado', get: d => countBy(d, x=> toYM(new Date(x.dataCriacao))===mesPassadoKey) },
+    { label: 'Total Criado', get: d => countBy(d, _=> true) },
+  ]
   return (
     <div className="reports">
       <div className="panel">
-        <div className="reports-toolbar">
-          <label>Designer</label>
-          <select value={selDesigner} onChange={e=>setSelDesigner(e.target.value)}>
-            {designersSel.map(d=> <option key={d} value={d}>{d}</option>)}
-          </select>
+        <div className="report-matrix">
+          <table>
+            <thead>
+              <tr>
+                <th>Títulos</th>
+                {designersFixos.map(d=> <th key={d}>{d}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.label}>
+                  <td>{r.label}</td>
+                  {designersFixos.map(d => <td key={d+r.label}>{r.get(d)}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        {/** métricas globais */}
-        <div className="metrics-grid">
-          <div className="metric-card">
-            <div className="metric-title">Demandas ({selDesigner})</div>
-            <div className="metric-value">{demandas.filter(filtraDesigner).length}</div>
-          </div>
-          <div className="metric-card">
-            <div className="metric-title">Concluídas ({selDesigner})</div>
-            <div className="metric-value">{demandas.filter(filtraDesigner).filter(x=>x.status==='Concluída').length}</div>
-          </div>
-          <div className="metric-card">
-            <div className="metric-title">Em aberto ({selDesigner})</div>
-            <div className="metric-value">{demandas.filter(filtraDesigner).filter(x=>x.status!=='Concluída').length}</div>
-          </div>
-        </div>
-        {/** cálculos específicos */}
-        {(() => {
-          const filtered = demandas.filter(filtraDesigner)
-          const hojeStr = toYMD(new Date())
-          const criadasHoje = filtered.filter(x=> x.dataCriacao === hojeStr)
-          const semKey = isoWeek(new Date())
-          const totalSemana = filtered.filter(x=> isoWeek(new Date(x.dataCriacao)) === semKey).length
-          const mesKey = toYM(new Date())
-          const totalMes = filtered.filter(x=> toYM(new Date(x.dataCriacao)) === mesKey).length
-          return (
-            <div className="reports-grid">
-              <div className="report-card">
-                <div className="report-title">Criadas hoje ({selDesigner})</div>
-                <div className="metric-value">{criadasHoje.length}</div>
-              </div>
-              <div className="report-card">
-                <div className="report-title">Total semana atual ({selDesigner})</div>
-                <div className="metric-value">{totalSemana}</div>
-              </div>
-              <div className="report-card">
-                <div className="report-title">Total mês atual ({selDesigner})</div>
-                <div className="metric-value">{totalMes}</div>
-              </div>
-              <div className="report-card">
-                <div className="report-title">Demanda total por Designer</div>
-                <ChartBars data={toChart(totalPorDesigner())} />
-              </div>
-              <div className="report-card">
-                <div className="report-title">Concluídas por Designer</div>
-                <ChartBars data={toChart(concluidasPorDesigner())} color="var(--green)" />
-              </div>
-              <div className="report-card">
-                <div className="report-title">Em aberto por Designer</div>
-                <ChartBars data={toChart(abertasPorDesigner())} color="var(--yellow)" />
-              </div>
-            </div>
-          )
-        })()}
       </div>
     </div>
   )
