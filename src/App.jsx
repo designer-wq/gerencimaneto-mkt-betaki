@@ -1007,16 +1007,20 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
   const monthDays = (()=>{ const d=new Date(); const s= new Date(d.getFullYear(), d.getMonth(), 1); const e= new Date(d.getFullYear(), d.getMonth()+1, 0); return { start:s, end:e, len:e.getDate() } })()
   const dayIndex = iso => { const [y,m,dd]=iso.split('-').map(Number); const dt = new Date(y,m-1,dd); return dt.getDate() }
   const colorByStatus = s => s==='Aberta' ? '#4DA3FF' : s==='Em Progresso' ? '#FFE55C' : '#00C58E'
+  const total = items.length || 1
+  const pct = (n)=> Math.round((n/total)*100)
+  const [chartTab, setChartTab] = useState('barras')
   return (
     <div className="dashboard">
       <div className="widgets">
         <div className="widget">
           <div className="widget-title">KPIs principais</div>
+          <div className="widget-subtitle">Indicadores gerais do período selecionado</div>
           <div className="kpi-grid">
             {kpi.map(it=> (
-              <div key={it.title} className="kpi">
+              <div key={it.title} className="kpi fade-in">
                 <div className="widget-title">{it.icon} {it.title}</div>
-                <div className="kpi-value">{it.value}</div>
+                <div className="kpi-value"><Counter value={it.value} /></div>
                 <div className="kpi-trend">↑ 12% vs período anterior</div>
               </div>
             ))}
@@ -1024,25 +1028,129 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
         </div>
         <div className="widget">
           <div className="widget-title">KPIs operacionais</div>
+          <div className="widget-subtitle">Visão instantânea do status da operação</div>
           <div className="badge-grid">
-            <div className="badge blue">Pendente {countStatus('Aberta')}</div>
-            <div className="badge yellow">Em produção {countStatus('Em Progresso')}</div>
-            <div className="badge purple">Aguardando feedback 0</div>
-            <div className="badge green">Aprovada {countStatus('Concluída')}</div>
-            <div className="badge red">Atrasada {alerts[0].value}</div>
+            <div className="badge-group">
+              {(()=>{
+                const val = countStatus('Aberta'); const p = pct(val)
+                return (
+                  <div className={`badge blue ${p>50?'critical':''}`}>
+                    <div>🔵 Pendente</div>
+                    <div>{val}</div>
+                    <div className="progress"><div className="progress-fill" style={{width:p+'%', background:'#4DA3FF'}} /></div>
+                    <div className="kpi-trend">{p}% do total</div>
+                  </div>
+                )
+              })()}
+              {(()=>{
+                const val = countStatus('Em Progresso'); const p = pct(val)
+                return (
+                  <div className="badge yellow">
+                    <div>🟡 Em produção</div>
+                    <div>{val}</div>
+                    <div className="progress"><div className="progress-fill" style={{width:p+'%', background:'#FFE55C'}} /></div>
+                    <div className="kpi-trend">{p}% do total</div>
+                  </div>
+                )
+              })()}
+              <div className="badge purple">
+                <div>🟣 Aguardando feedback</div>
+                <div>0</div>
+                <div className="progress"><div className="progress-fill" style={{width:'0%', background:'#6F2DBD'}} /></div>
+                <div className="kpi-trend">0% do total</div>
+              </div>
+            </div>
+            <div className="badge-group">
+              {(()=>{
+                const val = countStatus('Concluída'); const p = pct(val)
+                return (
+                  <div className="badge green ok">
+                    <div>🟢 Aprovada</div>
+                    <div>{val}</div>
+                    <div className="progress"><div className="progress-fill" style={{width:p+'%', background:'#00C58E'}} /></div>
+                    <div className="kpi-trend">{p}% do total</div>
+                  </div>
+                )
+              })()}
+              {(()=>{
+                const val = alerts[0].value; const p = pct(val)
+                return (
+                  <div className={`badge red ${val>0?'critical':''}`}>
+                    <div>🔴 Atrasada</div>
+                    <div>{val}</div>
+                    <div className="progress"><div className="progress-fill" style={{width:p+'%', background:'#FF6A6A'}} /></div>
+                    <div className="kpi-trend">{p}% do total</div>
+                  </div>
+                )
+              })()}
+            </div>
           </div>
         </div>
         <div className="widget">
           <div className="widget-title">Criados por dia</div>
-          {criados.map((v,i)=> (
+          <div className="tabs-inline">
+            {['linha','barras','comparativo','designer'].map(t=> (
+              <button key={t} className={`btn-md ${chartTab===t?'active':''}`} onClick={()=> setChartTab(t)}>{t[0].toUpperCase()+t.slice(1)}</button>
+            ))}
+          </div>
+          <div className="section-divider" />
+          {chartTab==='barras' && criados.map((v,i)=> (
             <div key={i} className="hbar"><div className="hfill" style={{width:`${Math.round(100*v/maxC)}%`, background:'#4DA3FF'}} /><div className="hval">{v}</div></div>
           ))}
+          {chartTab==='linha' && <Sparkline series={criados} color="#4DA3FF" />}
+          {chartTab==='comparativo' && (
+            <>
+              {criados.map((v,i)=> (
+                <div key={i} className="hbar"><div className="hfill" style={{width:`${Math.round(100*v/maxC)}%`, background:'#4DA3FF'}} /></div>
+              ))}
+              <div className="section-divider" />
+              {concluidos.map((v,i)=> (
+                <div key={i} className="hbar"><div className="hfill" style={{width:`${Math.round(100*v/maxD)}%`, background:'#00C58E'}} /></div>
+              ))}
+            </>
+          )}
+          {chartTab==='designer' && (
+            designers.map(d=> {
+              const val = items.filter(x=> x.designer===d).length
+              const p = pct(val)
+              return (
+                <div key={d} className="hbar"><div className="hfill" style={{width:p+'%', background:'#4DA3FF'}} /><div className="hval">{val} • {d}</div></div>
+              )
+            })
+          )}
         </div>
         <div className="widget">
           <div className="widget-title">Concluídos por dia</div>
+          <div className="section-divider" />
           {concluidos.map((v,i)=> (
             <div key={i} className="hbar"><div className="hfill" style={{width:`${Math.round(100*v/maxD)}%`, background:'#00C58E'}} /><div className="hval">{v}</div></div>
           ))}
+        </div>
+        <div className="widget">
+          <div className="widget-title">Resumo por Designer</div>
+          <div className="designer-summary">
+            <table>
+              <thead>
+                <tr><th>Designer</th><th>Em produção</th><th>Concluído</th><th>Atrasadas</th><th>Média/dia</th></tr>
+              </thead>
+              <tbody>
+                {designers.map(d=>{
+                  const emProd = items.filter(x=> x.designer===d && x.status==='Em Progresso').length
+                  const concl = items.filter(x=> x.designer===d && x.status==='Concluída').length
+                  const atras = items.filter(x=> x.designer===d && x.status!=='Concluída' && x.prazo && x.prazo < hojeISO()).length
+                  const dates = items.filter(x=> x.designer===d).map(x=> x.dataCriacao)
+                  const min = dates.length? dates.reduce((a,b)=> a<b?a:b) : hojeISO()
+                  const max = dates.length? dates.reduce((a,b)=> a>b?a:b) : hojeISO()
+                  const toD = s=>{ const [y,m,dd]=s.split('-').map(Number); return new Date(y,m-1,dd) }
+                  const days = Math.max(1, Math.round((toD(max)-toD(min))/86400000)+1)
+                  const mediaDia = (concl/days).toFixed(1)
+                  return (
+                    <tr key={d}><td>{d}</td><td>{emProd}</td><td>{concl}</td><td>{atras}</td><td>{mediaDia}</td></tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
         <div className="widget">
           <div className="widget-title">Alertas importantes</div>
@@ -1054,7 +1162,6 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
           ))}
         </div>
       </div>
-      
     </div>
   )
 }
