@@ -509,7 +509,6 @@ function ReportsView({ demandas, designers }) {
     const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1)/7)
     return `${date.getUTCFullYear()}-W${pad(weekNo)}`
   }
-  const designersFixos = ['Felipe','Thaigo']
   const hoje = new Date()
   const hojeStr = toYMD(hoje)
   const semanaKey = isoWeek(hoje)
@@ -523,6 +522,8 @@ function ReportsView({ demandas, designers }) {
     { label: 'Total Criado Mês Passado', get: d => countBy(d, x=> toYM(new Date(x.dataCriacao))===mesPassadoKey) },
     { label: 'Total Criado', get: d => countBy(d, _=> true) },
   ]
+  const tipos = useMemo(()=> Array.from(new Set(demandas.map(x=> x.tipoMidia).filter(Boolean))).sort(), [demandas])
+  const countTipoConcluida = (tipo) => demandas.filter(x=> x.tipoMidia===tipo && x.status==='Concluída').length
   return (
     <div className="reports">
       <div className="panel">
@@ -531,14 +532,32 @@ function ReportsView({ demandas, designers }) {
             <thead>
               <tr>
                 <th>Títulos</th>
-                {designersFixos.map(d=> <th key={d}>{d}</th>)}
+                {designers.map(d=> <th key={d}>{d}</th>)}
               </tr>
             </thead>
             <tbody>
               {rows.map(r => (
                 <tr key={r.label}>
                   <td>{r.label}</td>
-                  {designersFixos.map(d => <td key={d+r.label}>{r.get(d)}</td>)}
+                  {designers.map(d => <td key={d+r.label}>{r.get(d)}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="report-matrix">
+          <table>
+            <thead>
+              <tr>
+                <th>Tipo</th>
+                <th>Concluídas</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tipos.map(t => (
+                <tr key={t}>
+                  <td>{t}</td>
+                  <td>{countTipoConcluida(t)}</td>
                 </tr>
               ))}
             </tbody>
