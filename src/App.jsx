@@ -7,10 +7,18 @@ const readObj = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)
 const writeLS = (k, v) => localStorage.setItem(k, JSON.stringify(v))
 
 const ESTADOS = ["Aberta", "Em Progresso", "Concluída"]
-const statusLabel = s => s === "Aberta" ? "Aberta" : s === "Em Progresso" ? "Em Progresso" : "Concluída"
+const statusLabel = s => s === "Aberta" ? "Aberta" : s === "Em Progresso" ? "Em Progresso" : s === "Concluída" ? "Concluída" : s
 const statusDot = s => s === "Aberta" ? "🟡" : s === "Em Progresso" ? "🔵" : s === "Concluída" ? "🟢" : "•"
 const statusWithDot = s => `${statusDot(s)} ${statusLabel(s)}`
-const statusClass = s => s === 'Aberta' ? 'st-open' : s === 'Em Progresso' ? 'st-progress' : 'st-done'
+const statusClass = s => {
+  const v = (s||'').toLowerCase()
+  if (v.includes('pendente') || v.includes('aberta')) return 'st-pending'
+  if (v.includes('progresso') || v.includes('produção')) return 'st-progress'
+  if (v.includes('feedback')) return 'st-feedback'
+  if (v.includes('conclu') || v.includes('aprov')) return 'st-done'
+  if (v.includes('atras')) return 'st-late'
+  return ''
+}
 
 const hexToRgb = (hex) => {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex||'')
@@ -49,14 +57,26 @@ function Counter({ value }) {
   return <span>{v}</span>
 }
 
-function Header({ onNew, view, setView }) {
+function Sparkline({ series, color='#BCD200' }) {
+  const w = 120, h = 30
+  const max = Math.max(...series, 1)
+  const step = series.length > 1 ? w/(series.length-1) : w
+  const points = series.map((v,i)=> `${i*step},${h - (v/max)*h}`).join(' ')
+  return (
+    <svg width={w} height={h} className="sparkline" viewBox={`0 0 ${w} ${h}`}>
+      <polyline points={points} fill="none" stroke={color} strokeWidth="2" />
+    </svg>
+  )
+}
+
+function Header({ onNew, view, setView, showNew }) {
   return (
     <div className="topbar">
       <div className="topbar-left">
         <div className="team">Equipe de Marketing</div>
       </div>
       <div className="topbar-right">
-        <button className="primary" onClick={onNew}>Nova Demanda</button>
+        {showNew && <button className="primary" onClick={onNew}>Nova Demanda</button>}
       </div>
     </div>
   )
@@ -91,7 +111,7 @@ function ViewButtonsInner({ view, setView }) {
   )
 }
 
-function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus, cadPlataformas }) {
+function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus, cadPlataformas, cadTipos }) {
   const set = (k,v)=>setFiltros(prev=>({ ...prev, [k]: v }))
   const clear = ()=>setFiltros({designer:'',status:'',plataforma:'',cIni:'',cFim:'',sIni:'',sFim:''})
   if (!open) return null
@@ -114,6 +134,18 @@ function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus,
               <option value="">Status</option>
               {cadStatus.map(s=> <option key={s} value={s}>{statusWithDot(s)}</option>)}
             </select>
+            <div className="chips">
+              {cadStatus.map(s=> (
+                <button key={s} className={`chip ${filtros.status===s?'active':''}`} onClick={()=> set('status', filtros.status===s?'':s)}>{s}</button>
+              ))}
+            </div>
+          </div>
+          <div className="form-row"><label>Tipo</label>
+            <div className="chips">
+              {cadTipos.map(t=> (
+                <button key={t} className={`chip ${filtros.tipoMidia===t?'active':''}`} onClick={()=> set('tipoMidia', filtros.tipoMidia===t?'':t)}>{t}</button>
+              ))}
+            </div>
           </div>
           <div className="form-row"><label>Data de Criação</label>
             <div className="range">
@@ -150,6 +182,7 @@ function aplicarFiltros(items, f) {
     if (f.q && !(it.titulo||'').toLowerCase().includes(f.q.toLowerCase())) return false
     if (f.designer && it.designer !== f.designer) return false
     if (f.status && it.status !== f.status) return false
+    if (f.tipoMidia && it.tipoMidia !== f.tipoMidia) return false
     if (f.plataforma && (it.plataforma||'') !== f.plataforma) return false
     if (f.cIni && it.dataCriacao < f.cIni) return false
     if (f.cFim && it.dataCriacao > f.cFim) return false
@@ -159,11 +192,14 @@ function aplicarFiltros(items, f) {
   })
 }
 
-function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, hasMore, showMore, canCollapse, showLess, shown, total }) {
+function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, hasMore, showMore, canCollapse, showLess, shown, total, compact }) {
   const [menuOpen, setMenuOpen] = useState(null)
   const toggleMenu = (id) => setMenuOpen(prev => prev===id ? null : id)
+  const pad = n => String(n).padStart(2,'0')
+  const isoWeek = d => { const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const dayNum = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() + 4 - dayNum); const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1)); const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1)/7); return `${date.getUTCFullYear()}-W${pad(weekNo)}` }
+  const thisWeek = isoWeek(new Date())
   return (
-    <div className="table">
+    <div className={`table ${compact?'compact':''}`}>
       <table>
         <thead>
           <tr>
@@ -182,9 +218,14 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
           {items.map(it => (
             <tr key={it.id} className="row-clickable" onClick={()=>onEdit(it)}>
               <td className="name">{it.titulo}</td>
-              <td>{it.designer}</td>
               <td>
-                <select className="status-select" value={it.status} onChange={e=>onStatus(it.id, e.target.value)} onClick={e=>e.stopPropagation()}>
+                <div>{it.designer}</div>
+                <div className="perf">
+                  {(()=>{ const count = items.filter(x=> x.designer===it.designer && isoWeek(new Date(x.dataCriacao))===thisWeek).length; const pct = Math.min(100, Math.round((count/10)*100)); return <div className="perf-bar"><div className="perf-fill" style={{ width: pct+'%' }}></div><span className="perf-val">{pct}%</span></div> })()}
+                </div>
+              </td>
+              <td>
+                <select className={`status-select ${statusClass(it.status)}`} value={it.status} onChange={e=>onStatus(it.id, e.target.value)} onClick={e=>e.stopPropagation()}>
                   {cadStatus.map(s=> <option key={s} value={s}>{statusWithDot(s)}</option>)}
                 </select>
               </td>
@@ -225,7 +266,7 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
   )
 }
 
-function BoardView({ items, onEdit, onStatus, cadStatus, onDelete }) {
+function BoardView({ items, onEdit, onStatus, cadStatus, onDelete, compact }) {
   return (
     <div className="board">
       {cadStatus.map(st => (
@@ -239,7 +280,7 @@ function BoardView({ items, onEdit, onStatus, cadStatus, onDelete }) {
                   <div className="acts" />
                 </div>
                 <div className="meta">{it.designer} • {it.tipoMidia}{it.plataforma?` • ${it.plataforma}`:''}</div>
-                <select className="status-select" value={it.status} onChange={e=>onStatus(it.id, e.target.value)} onClick={e=>e.stopPropagation()}>
+                <select className={`status-select ${statusClass(it.status)}`} value={it.status} onChange={e=>onStatus(it.id, e.target.value)} onClick={e=>e.stopPropagation()}>
                   {cadStatus.map(s=> <option key={s} value={s}>{statusWithDot(s)}</option>)}
                 </select>
               </div>
@@ -343,7 +384,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
                 Promise.all(readers).then(arr => setArquivos(arr))
               }} />
             </div>
-            {mode!=='create' && <div className="form-row"><label>Data de Criação</label><input type="date" value={dataCriacao} disabled /></div>}
+            
             <div className="form-row"><label>Data de Solicitação</label><input type="date" value={dataSolic} onChange={e=>setDataSolic(e.target.value)} disabled={mode==='create'} /></div>
             <div className="form-row"><label>Prazo</label><input type="date" value={prazo} onChange={e=>setPrazo(e.target.value)} /></div>
           </div>
@@ -410,6 +451,7 @@ function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadDesi
 export default function App() {
   const [demandas, setDemandas] = useState(ler())
   const [view, setView] = useState('table')
+  const [compact, setCompact] = useState(false)
   const [route, setRoute] = useState('demandas')
   const [filtros, setFiltros] = useState({designer:'',status:'',plataforma:'',cIni:'',cFim:'',sIni:'',sFim:''})
   const [filterOpen, setFilterOpen] = useState(false)
@@ -505,10 +547,15 @@ export default function App() {
       <Sidebar route={route} setRoute={setRoute} />
       <div className="content">
         <div className="app">
-          <Header onNew={onNew} view={view} setView={setView} />
+          <Header onNew={onNew} view={view} setView={setView} showNew={route==='demandas'} />
           {route==='demandas' && <FilterButton onOpen={()=>setFilterOpen(true)} view={view} setView={setView} filtros={filtros} setFiltros={setFiltros} />}
-          {route==='demandas' && view==='table' && <TableView items={itemsSorted.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsSorted.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsSorted.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsSorted.length)} total={itemsSorted.length} />}
-          {route==='demandas' && view==='board' && <BoardView items={items} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} />}
+          {route==='demandas' && (
+            <div className="topnav">
+              <button className="icon" onClick={()=> setCompact(c=>!c)}>{compact?'Expandido':'Compacto'}</button>
+            </div>
+          )}
+          {route==='demandas' && view==='table' && <TableView items={itemsSorted.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsSorted.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsSorted.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsSorted.length)} total={itemsSorted.length} compact={compact} />}
+          {route==='demandas' && view==='board' && <BoardView items={items} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} compact={compact} />}
           {route==='demandas' && view==='calendar' && (
           <div className="calendar-wrap">
             <div className="calendar-toolbar">
@@ -524,14 +571,14 @@ export default function App() {
           {route==='demandas' && (
             <>
           <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} cadDesigners={cadDesigners} cadPlataformas={cadPlataformas} onDelete={onDelete} />
-              <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designers} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} cadPlataformas={cadPlataformas} />
+              <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designers} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} cadPlataformas={cadPlataformas} cadTipos={cadTipos} />
             </>
           )}
           {route==='cadastros' && (
             <CadastrosView cadStatus={cadStatus} setCadStatus={setCadStatus} cadTipos={cadTipos} setCadTipos={setCadTipos} cadDesigners={cadDesigners} setCadDesigners={setCadDesigners} cadPlataformas={cadPlataformas} setCadPlataformas={setCadPlataformas} cadStatusColors={cadStatusColors} setCadStatusColors={setCadStatusColors} />
           )}
           {route==='relatorios' && (
-            <ReportsView demandas={demandas} designers={designers} />
+            <ReportsView demandas={demandas} designers={designers} setRoute={setRoute} setFiltros={setFiltros} setView={setView} />
           )}
           
         </div>
@@ -555,7 +602,7 @@ function Sidebar({ route, setRoute }) {
 
  
 
-function ReportsView({ demandas, designers }) {
+function ReportsView({ demandas, designers, setRoute, setFiltros, setView }) {
   const pad = n => String(n).padStart(2,'0')
   const toYMD = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`
   const toYM = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}`
@@ -635,6 +682,8 @@ function ReportsView({ demandas, designers }) {
     })
     return { created: map, done: mapDone }
   },[demandas, startEnd])
+  const [designerSel, setDesignerSel] = useState('')
+  const matchDesigner = (x) => !designerSel || norm(x.designer)===designerSel
   return (
     <div className="reports">
       <div className="panel">
@@ -655,54 +704,78 @@ function ReportsView({ demandas, designers }) {
               <input type="date" value={customFim} onChange={e=>setCustomFim(e.target.value)} />
             </>
           )}
+          <div>Designer</div>
+          <select value={designerSel} onChange={e=> setDesignerSel(e.target.value)}>
+            <option value="">Todos</option>
+            {designersKeys.map(d=> <option key={d} value={d}>{d}</option>)}
+          </select>
         </div>
         <div className="metrics-grid">
           <div className="metric-card">
             <div className="metric-title">📅 Criados no período</div>
-            <div className="metric-value"><Counter value={totalCriadosPeriodo} /></div>
+            <div className="metric-value"><Counter value={demandas.filter(x=> matchDesigner(x) && inRange(x.dataCriacao, startEnd)).length} /></div>
             <div className="today-meta">{varCriados>=0?'⬆':'⬇'} {Math.abs(varCriados)}% vs período anterior</div>
+            <Sparkline series={(()=>{ const parse=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(a,b-1,c)}; const ini=parse(startEnd.ini); const fim=parse(startEnd.fim); const days=Math.max(1,Math.round((fim-ini)/86400000)+1); const arr=[]; for(let i=0;i<days;i++){ const d=new Date(ini); d.setDate(ini.getDate()+i); const ymd=toYMD(d); arr.push(demandas.filter(x=> matchDesigner(x) && inRange(x.dataCriacao,{ini:ymd,fim:ymd})).length) } return arr })()} color="#BCD200" />
           </div>
           <div className="metric-card">
             <div className="metric-title">🏁 Concluídos no período</div>
-            <div className="metric-value"><Counter value={totalConcluidosPeriodo} /></div>
+            <div className="metric-value"><Counter value={demandas.filter(x=> matchDesigner(x) && x.status==='Concluída' && inRange(x.dataCriacao, startEnd)).length} /></div>
             <div className="today-meta">{varConcluidos>=0?'⬆':'⬇'} {Math.abs(varConcluidos)}% vs período anterior</div>
+            <Sparkline series={(()=>{ const parse=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(a,b-1,c)}; const ini=parse(startEnd.ini); const fim=parse(startEnd.fim); const days=Math.max(1,Math.round((fim-ini)/86400000)+1); const arr=[]; for(let i=0;i<days;i++){ const d=new Date(ini); d.setDate(ini.getDate()+i); const ymd=toYMD(d); arr.push(demandas.filter(x=> matchDesigner(x) && x.status==='Concluída' && inRange(x.dataCriacao,{ini:ymd,fim:ymd})).length) } return arr })()} color="#9ba7b4" />
           </div>
           <div className="metric-card">
             <div className="metric-title">Pendentes (Aberta)</div>
-            <div className="metric-value"><Counter value={demandas.filter(x=> x.status==='Aberta' && inRange(x.dataCriacao, startEnd)).length} /></div>
+            <div className="metric-value"><Counter value={demandas.filter(x=> matchDesigner(x) && x.status==='Aberta' && inRange(x.dataCriacao, startEnd)).length} /></div>
+            <Sparkline series={(()=>{ const parse=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(a,b-1,c)}; const ini=parse(startEnd.ini); const fim=parse(startEnd.fim); const days=Math.max(1,Math.round((fim-ini)/86400000)+1); const arr=[]; for(let i=0;i<days;i++){ const d=new Date(ini); d.setDate(ini.getDate()+i); const ymd=toYMD(d); arr.push(demandas.filter(x=> matchDesigner(x) && x.status==='Aberta' && inRange(x.dataCriacao,{ini:ymd,fim:ymd})).length) } return arr })()} color="#BCD200" />
           </div>
           <div className="metric-card">
             <div className="metric-title">Em produção</div>
-            <div className="metric-value"><Counter value={demandas.filter(x=> x.status==='Em Progresso' && inRange(x.dataCriacao, startEnd)).length} /></div>
+            <div className="metric-value"><Counter value={demandas.filter(x=> matchDesigner(x) && x.status==='Em Progresso' && inRange(x.dataCriacao, startEnd)).length} /></div>
+            <Sparkline series={(()=>{ const parse=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(a,b-1,c)}; const ini=parse(startEnd.ini); const fim=parse(startEnd.fim); const days=Math.max(1,Math.round((fim-ini)/86400000)+1); const arr=[]; for(let i=0;i<days;i++){ const d=new Date(ini); d.setDate(ini.getDate()+i); const ymd=toYMD(d); arr.push(demandas.filter(x=> matchDesigner(x) && x.status==='Em Progresso' && inRange(x.dataCriacao,{ini:ymd,fim:ymd})).length) } return arr })()} color="#BCD200" />
           </div>
         </div>
         <div className="report-card">
-          <div className="report-title">📊 Criados/Concluídos por dia da semana</div>
+          <div className="report-title">📊 Criados por dia da semana</div>
           <div className="chart">
             {weekDays.map((w,i)=>{
-              const maxv = Math.max(...weekdayCounts.created, ...weekdayCounts.done, 1)
-              const created = weekdayCounts.created[i]
-              const done = weekdayCounts.done[i]
+              const maxv = Math.max(...weekDays.map((_,idx)=> demandas.filter(x=> matchDesigner(x) && inRange(x.dataCriacao, startEnd) && (new Date(x.dataCriacao).getDay()===idx)).length), 1)
+              const created = demandas.filter(x=> matchDesigner(x) && inRange(x.dataCriacao, startEnd) && (new Date(x.dataCriacao).getDay()===i)).length
               const cw = Math.round((created/maxv)*100)
-              const dw = Math.round((done/maxv)*100)
               return (
                 <div key={w} className="chart-row">
                   <div className="chart-label">{w}</div>
                   <div className="chart-bar"><div className="chart-fill" style={{ width: cw+'%', background: 'var(--accent)' }}></div><div className="chart-value">{created}</div></div>
+                </div>
+              )
+            })}
+          </div>
+          <button className="icon" onClick={()=>{ setFiltros(prev=> ({ ...prev, cIni: startEnd.ini, cFim: startEnd.fim, designer: designerSel||'' })); setRoute('demandas'); setView('table') }}>🔍 Ver detalhes</button>
+        </div>
+        <div className="report-card">
+          <div className="report-title">📈 Concluídos por dia da semana</div>
+          <div className="chart">
+            {weekDays.map((w,i)=>{
+              const maxv = Math.max(...weekDays.map((_,idx)=> demandas.filter(x=> matchDesigner(x) && x.status==='Concluída' && inRange(x.dataCriacao, startEnd) && (new Date(x.dataCriacao).getDay()===idx)).length), 1)
+              const done = demandas.filter(x=> matchDesigner(x) && x.status==='Concluída' && inRange(x.dataCriacao, startEnd) && (new Date(x.dataCriacao).getDay()===i)).length
+              const dw = Math.round((done/maxv)*100)
+              return (
+                <div key={w} className="chart-row">
+                  <div className="chart-label">{w}</div>
                   <div className="chart-bar"><div className="chart-fill" style={{ width: dw+'%', background: '#bdbdbd' }}></div><div className="chart-value">{done}</div></div>
                 </div>
               )
             })}
           </div>
+          <button className="icon" onClick={()=>{ setFiltros(prev=> ({ ...prev, cIni: startEnd.ini, cFim: startEnd.fim, designer: designerSel||'' })); setRoute('demandas'); setView('table') }}>🔍 Ver detalhes</button>
         </div>
         <div className="report-card">
           <div className="report-title">🔥 Alertas importantes</div>
           <div className="today-list">
-            <div className="today-item">⚠ {demandas.filter(x=> (x.prazo||'') && x.status!=='Concluída' && x.prazo < toYMD(new Date())).length} demandas atrasadas</div>
-            <div className="today-item">⏳ {demandas.filter(x=> (x.prazo||'') && x.status!=='Concluída' && x.prazo===toYMD(new Date(new Date().setDate(new Date().getDate()+1)))).length} vencem amanhã</div>
-            <div className="today-item">❗ {demandas.filter(x=> !norm(x.designer)).length} sem designer atribuído</div>
-            <div className="today-item">🔁 {demandas.filter(x=> (x.revisoes||0) >= 3).length} com mais de 2 revisões</div>
-            <div className="today-item">📌 {demandas.filter(x=> !(x.prazo||'')).length} sem prazo definido</div>
+            <div className="today-item alert-red">⚠ {demandas.filter(x=> matchDesigner(x) && (x.prazo||'') && x.status!=='Concluída' && x.prazo < toYMD(new Date())).length} demandas atrasadas</div>
+            <div className="today-item alert-yellow">⏳ {demandas.filter(x=> matchDesigner(x) && (x.prazo||'') && x.status!=='Concluída' && x.prazo===toYMD(new Date(new Date().setDate(new Date().getDate()+1)))).length} vencem amanhã</div>
+            <div className="today-item alert-orange">❗ {demandas.filter(x=> matchDesigner(x) && !norm(x.designer)).length} sem designer atribuído</div>
+            <div className="today-item alert-purple">🔁 {demandas.filter(x=> matchDesigner(x) && (x.revisoes||0) >= 3).length} com mais de 2 revisões</div>
+            <div className="today-item alert-grey">📌 {demandas.filter(x=> matchDesigner(x) && !(x.prazo||'')).length} sem prazo definido</div>
           </div>
         </div>
         
