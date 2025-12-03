@@ -229,7 +229,7 @@ function CalendarView({ items, refDate }) {
   )
 }
 
-function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners, cadPlataformas, onDelete, onRequireMaster }) {
+function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners, cadPlataformas, onDelete }) {
   const [designer, setDesigner] = useState(initial?.designer || '')
   const [tipoMidia, setTipoMidia] = useState(initial?.tipoMidia || 'Post')
   const [titulo, setTitulo] = useState(initial?.titulo || '')
@@ -292,7 +292,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
           </div>
           <div className="form-row"><label>Descrição</label><textarea rows={3} value={descricao} onChange={e=>setDescricao(e.target.value)} /></div>
           <div className="modal-footer">
-            {mode==='edit' && <button className="danger" type="button" onClick={()=> onRequireMaster(()=>{ onDelete(initial.id); onClose() }, 'Excluir demanda') }>Excluir</button>}
+            {mode==='edit' && <button className="danger" type="button" onClick={()=>{ onDelete(initial.id); onClose() }}>Excluir</button>}
             <button className="primary" type="submit">Salvar</button>
           </div>
         </form>
@@ -351,10 +351,7 @@ export default function App() {
   const [modalOpen, setModalOpen] = useState(false)
   const [modalMode, setModalMode] = useState('create')
   const [editing, setEditing] = useState(null)
-  const [authCadastros, setAuthCadastros] = useState(false)
-  const [passOpen, setPassOpen] = useState(false)
-  const [passTitle, setPassTitle] = useState('Senha master')
-  const [passCb, setPassCb] = useState(null)
+  
   const [cadStatus, setCadStatus] = useState(readLS('cadStatus', ["Aberta","Em Progresso","Concluída"]))
   const [cadTipos, setCadTipos] = useState(readLS('cadTipos', ["Post","Story","Banner","Vídeo","Outro"]))
   const [cadDesigners, setCadDesigners] = useState(readLS('cadDesigners', []))
@@ -413,11 +410,11 @@ export default function App() {
     setModalOpen(false)
   }
 
-  const requireMaster = (cb, title='Senha master') => { setPassTitle(title); setPassCb(()=>cb); setPassOpen(true) }
+  
 
   return (
     <div className="layout">
-      <Sidebar route={route} setRoute={setRoute} requireMaster={requireMaster} authCadastros={authCadastros} setAuthCadastros={setAuthCadastros} />
+      <Sidebar route={route} setRoute={setRoute} />
       <div className="content">
         <div className="app">
           <Header onNew={onNew} view={view} setView={setView} />
@@ -438,7 +435,7 @@ export default function App() {
           )}
           {route==='demandas' && (
             <>
-          <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} cadDesigners={cadDesigners} cadPlataformas={cadPlataformas} onDelete={onDelete} onRequireMaster={requireMaster} />
+          <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} cadDesigners={cadDesigners} cadPlataformas={cadPlataformas} onDelete={onDelete} />
               <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designers} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} />
             </>
           )}
@@ -448,20 +445,19 @@ export default function App() {
           {route==='relatorios' && (
             <ReportsView demandas={demandas} designers={designers} />
           )}
-          <PasswordModal open={passOpen} title={passTitle} onClose={()=>setPassOpen(false)} onSuccess={()=>{ if (passCb) { const fn = passCb; setPassCb(null); fn() } }} />
+          
         </div>
       </div>
     </div>
   )
 }
-function Sidebar({ route, setRoute, requireMaster, authCadastros, setAuthCadastros }) {
+function Sidebar({ route, setRoute }) {
   return (
     <aside className="sidebar">
-      <div className="brand">🎨</div>
       <nav>
         <ul className="nav-list">
           <li><a href="#" className={`nav-link ${route==='demandas'?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute('demandas') }}>📋 Demandas</a></li>
-          <li><a href="#" className={`nav-link ${route==='cadastros'?'active':''}`} onClick={e=>{ e.preventDefault(); if (!authCadastros) requireMaster(()=>{ setAuthCadastros(true); setRoute('cadastros') }, 'Acesso Cadastros'); else setRoute('cadastros') }}>⚙️ Cadastros</a></li>
+          <li><a href="#" className={`nav-link ${route==='cadastros'?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute('cadastros') }}>⚙️ Cadastros</a></li>
           <li><a href="#" className={`nav-link ${route==='relatorios'?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute('relatorios') }}>📈 Relatórios</a></li>
         </ul>
       </nav>
@@ -469,31 +465,7 @@ function Sidebar({ route, setRoute, requireMaster, authCadastros, setAuthCadastr
   )
 }
 
-function PasswordModal({ open, title, onClose, onSuccess }) {
-  const [val, setVal] = useState('')
-  const [err, setErr] = useState('')
-  if (!open) return null
-  const master = import.meta.env.VITE_MASTER_PASSWORD || 'admin'
-  const submit = e => { e.preventDefault(); if (val===master) { onSuccess(); onClose() } else { setErr('Senha incorreta') } }
-  return (
-    <div className="modal" onClick={onClose}>
-      <div className="modal-dialog" onClick={e=>e.stopPropagation()}>
-        <div className="modal-header">
-          <div className="title">{title}</div>
-          <button className="icon" onClick={onClose}>✕</button>
-        </div>
-        <form className="modal-body" onSubmit={submit}>
-          <div className="form-row"><label>Senha</label><input type="password" value={val} onChange={e=>setVal(e.target.value)} autoFocus /></div>
-          {err && <div className="empty" style={{color:'var(--red)'}}>{err}</div>}
-          <div className="modal-footer">
-            <button type="button" className="tab" onClick={onClose}>Cancelar</button>
-            <button className="primary" type="submit">Confirmar</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )
-}
+ 
 
 function ReportsView({ demandas, designers }) {
   const [selDesigner, setSelDesigner] = useState('Todos Designers')
