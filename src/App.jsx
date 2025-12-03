@@ -30,6 +30,24 @@ const contrastText = (hex) => {
   return yiq >= 128 ? '#111' : '#fff'
 }
 const statusColor = (s, colors) => colors?.[s] || (s==='Aberta'?'#f59e0b': s==='Em Progresso'?'#3b82f6': s==='Concluída'?'#10b981':'#3b82f6')
+const defaultTheme = {
+  bg:'#070707',
+  panel:'#0E0E0E',
+  text:'#F2F2F2',
+  muted:'#BDBDBD',
+  border:'#ffffff1a',
+  accent:'#BCD200',
+  hover:'rgba(255,255,255,0.03)',
+  btnBg:'#BCD200',
+  btnText:'#111111',
+  btnHoverBg:'#C7DB00',
+  btnBorder:'#ffffff1a',
+  shadow:'0 10px 30px rgba(0,0,0,.15)',
+  green:'#10b981',
+  yellow:'#f59e0b',
+  red:'#ef4444',
+  chart:'#3b82f6'
+}
 
 const hojeISO = () => {
   const d = new Date(); const z = n => String(n).padStart(2, '0')
@@ -220,9 +238,6 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
               <td className="name">{it.titulo}</td>
               <td>
                 <div>{it.designer}</div>
-                <div className="perf">
-                  {(()=>{ const count = items.filter(x=> x.designer===it.designer && isoWeek(new Date(x.dataCriacao))===thisWeek).length; const pct = Math.min(100, Math.round((count/10)*100)); return <div className="perf-bar"><div className="perf-fill" style={{ width: pct+'%' }}></div><span className="perf-val">{pct}%</span></div> })()}
-                </div>
               </td>
               <td>
                 <select className={`status-select ${statusClass(it.status)}`} value={it.status} onChange={e=>onStatus(it.id, e.target.value)} onClick={e=>e.stopPropagation()}>
@@ -267,22 +282,52 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
 }
 
 function BoardView({ items, onEdit, onStatus, cadStatus, onDelete, compact }) {
+  const mondayCols = [
+    { name:'Pendente', map:'Aberta' },
+    { name:'Em produção', map:'Em Progresso' },
+    { name:'Aguardando feedback', map:'Aguardando feedback' },
+    { name:'Aprovada', map:'Concluída' },
+    { name:'Concluída', map:'Concluída' },
+  ]
+  const available = new Set(cadStatus)
+  const targetFor = (col) => available.has(col.map) ? col.map : (col.name==='Aguardando feedback' ? (available.has('Em Progresso')?'Em Progresso': cadStatus[0]) : (available.has('Concluída')?'Concluída': cadStatus[0]))
+  const isInCol = (it, col) => {
+    const t = targetFor(col)
+    if (col.name==='Aguardando feedback') return (it.status||'').toLowerCase().includes('feedback') || it.status===t
+    if (col.name==='Pendente') return (it.status||'').includes('Aberta') || it.status===t
+    if (col.name==='Em produção') return it.status===t
+    if (col.name==='Aprovada') return (it.status||'').toLowerCase().includes('aprov') || it.status===t
+    if (col.name==='Concluída') return it.status===t
+    return it.status===t
+  }
+  const onDropCol = (e, col) => {
+    e.preventDefault()
+    const id = Number(e.dataTransfer.getData('id'))
+    const t = targetFor(col)
+    if (id && t) onStatus(id, t)
+  }
+  const onDragOver = (e)=>{ e.preventDefault(); e.currentTarget.classList.add('dragover') }
+  const onDragLeave = (e)=>{ e.currentTarget.classList.remove('dragover') }
+  const statusColorFor = (s)=> statusColor(s, {})
   return (
     <div className="board">
-      {cadStatus.map(st => (
-        <div key={st} className="column">
-          <div className="col-head">{statusWithDot(st)}</div>
-          <div className="col-body">
-            {items.filter(x=>x.status===st).map(it => (
-              <div key={it.id} className="card" onClick={()=>onEdit(it)}>
-                <div className="card-top">
-                  <div className="title">{it.titulo}</div>
-                  <div className="acts" />
+      {mondayCols.map(col => (
+        <div key={col.name} className="column">
+          <div className="col-head">{col.name}</div>
+          <div className="col-body dropzone" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={e=> onDropCol(e, col)}>
+            {items.filter(it=> isInCol(it, col)).map(it => (
+              <div key={it.id} className="card kanban-card" draggable onDragStart={e=> e.dataTransfer.setData('id', String(it.id))} onClick={()=>onEdit(it)}>
+                <div className="kanban-avatar">{String(it.designer||'').slice(0,2).toUpperCase()}</div>
+                <div>
+                  <div className="card-top">
+                    <div className="title">{it.titulo}</div>
+                  </div>
+                  <div className="meta">{it.tipoMidia}{it.plataforma?` • ${it.plataforma}`:''}</div>
+                  <div style={{display:'flex',alignItems:'center',gap:8}}>
+                    <span className="pill" style={{borderColor:statusColorFor(it.status), color:statusColorFor(it.status)}}>{statusLabel(it.status)}</span>
+                    {it.prazo && <span className="due">⏰ {it.prazo}</span>}
+                  </div>
                 </div>
-                <div className="meta">{it.designer} • {it.tipoMidia}{it.plataforma?` • ${it.plataforma}`:''}</div>
-                <select className={`status-select ${statusClass(it.status)}`} value={it.status} onChange={e=>onStatus(it.id, e.target.value)} onClick={e=>e.stopPropagation()}>
-                  {cadStatus.map(s=> <option key={s} value={s}>{statusWithDot(s)}</option>)}
-                </select>
               </div>
             ))}
           </div>
@@ -350,7 +395,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
     setPrazo(initial?.prazo || '')
   },[initial, open, cadDesigners, cadTipos, cadPlataformas])
   if (!open) return null
-  const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, plataforma, arquivos, descricao }) }
+  const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, plataforma, arquivos, descricao, prazo }) }
   return (
     <div className="modal" onClick={mode==='create'? undefined : onClose}>
       <div className="modal-dialog" onClick={e=>e.stopPropagation()}>
@@ -458,6 +503,7 @@ export default function App() {
   const [modalOpen, setModalOpen] = useState(false)
   const [modalMode, setModalMode] = useState('create')
   const [editing, setEditing] = useState(null)
+  const [themeVars, setThemeVars] = useState(readObj('themeVars', defaultTheme))
   
   const [cadStatus, setCadStatus] = useState(readLS('cadStatus', ["Aberta","Em Progresso","Concluída"]))
   const [cadTipos, setCadTipos] = useState(readLS('cadTipos', ["Post","Story","Banner","Vídeo","Outro"]))
@@ -479,6 +525,12 @@ export default function App() {
   useEffect(()=>{ writeLS('cadDesigners', cadDesigners) },[cadDesigners])
   useEffect(()=>{ writeLS('cadPlataformas', cadPlataformas) },[cadPlataformas])
   useEffect(()=>{ writeLS('cadStatusColors', cadStatusColors) },[cadStatusColors])
+  useEffect(()=>{
+    Object.entries(themeVars||{}).forEach(([k,v])=>{
+      try { document.documentElement.style.setProperty(`--${k}`, v) } catch {}
+    })
+    writeLS('themeVars', themeVars)
+  },[themeVars])
   useEffect(()=>{
     if (apiEnabled) {
       api.listDemandas().then(list => { if (Array.isArray(list)) setDemandas(list) })
@@ -519,7 +571,7 @@ export default function App() {
     setDemandas(prev=> prev.filter(x=> x.id!==id))
     if (apiEnabled) await api.deleteDemanda(id)
   }
-  const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, plataforma, arquivos, descricao }) => {
+  const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, plataforma, arquivos, descricao, prazo }) => {
     if (modalMode==='edit' && editing) {
       const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, plataforma, prazo }
       setDemandas(prev=> prev.map(x=> x.id===editing.id ? updated : x))
@@ -548,7 +600,9 @@ export default function App() {
       <div className="content">
         <div className="app">
           <Header onNew={onNew} view={view} setView={setView} showNew={route==='demandas'} />
-          {route==='demandas' && <FilterButton onOpen={()=>setFilterOpen(true)} view={view} setView={setView} filtros={filtros} setFiltros={setFiltros} />}
+          {route!=='config' && (
+            <FilterBar filtros={filtros} setFiltros={setFiltros} designers={designers} />
+          )}
           {route==='demandas' && (
             <div className="topnav">
               <button className="icon" onClick={()=> setCompact(c=>!c)}>{compact?'Expandido':'Compacto'}</button>
@@ -574,11 +628,14 @@ export default function App() {
               <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designers} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} cadPlataformas={cadPlataformas} cadTipos={cadTipos} />
             </>
           )}
+          {route==='config' && (
+            <ConfigView themeVars={themeVars} setThemeVars={setThemeVars} />
+          )}
           {route==='cadastros' && (
             <CadastrosView cadStatus={cadStatus} setCadStatus={setCadStatus} cadTipos={cadTipos} setCadTipos={setCadTipos} cadDesigners={cadDesigners} setCadDesigners={setCadDesigners} cadPlataformas={cadPlataformas} setCadPlataformas={setCadPlataformas} cadStatusColors={cadStatusColors} setCadStatusColors={setCadStatusColors} />
           )}
           {route==='relatorios' && (
-            <ReportsView demandas={demandas} designers={designers} setRoute={setRoute} setFiltros={setFiltros} setView={setView} />
+            <DashboardView demandas={demandas} items={items} designers={designers} setView={setView} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} compact={compact} calRef={calRef} setCalRef={setCalRef} />
           )}
           
         </div>
@@ -592,6 +649,7 @@ function Sidebar({ route, setRoute }) {
       <nav>
         <ul className="nav-list">
           <li><a href="#" className={`nav-link ${route==='demandas'?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute('demandas') }}>📋 Demandas</a></li>
+          <li><a href="#" className={`nav-link ${route==='config'?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute('config') }}>🎨 Configurações</a></li>
           <li><a href="#" className={`nav-link ${route==='cadastros'?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute('cadastros') }}>⚙️ Cadastros</a></li>
           <li><a href="#" className={`nav-link ${route==='relatorios'?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute('relatorios') }}>📈 Relatórios</a></li>
         </ul>
@@ -734,6 +792,7 @@ function ReportsView({ demandas, designers, setRoute, setFiltros, setView }) {
             <Sparkline series={(()=>{ const parse=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(a,b-1,c)}; const ini=parse(startEnd.ini); const fim=parse(startEnd.fim); const days=Math.max(1,Math.round((fim-ini)/86400000)+1); const arr=[]; for(let i=0;i<days;i++){ const d=new Date(ini); d.setDate(ini.getDate()+i); const ymd=toYMD(d); arr.push(demandas.filter(x=> matchDesigner(x) && x.status==='Em Progresso' && inRange(x.dataCriacao,{ini:ymd,fim:ymd})).length) } return arr })()} color="#BCD200" />
           </div>
         </div>
+        <div className="reports-grid">
         <div className="report-card">
           <div className="report-title">📊 Criados por dia da semana</div>
           <div className="chart">
@@ -778,7 +837,297 @@ function ReportsView({ demandas, designers, setRoute, setFiltros, setView }) {
             <div className="today-item alert-grey">📌 {demandas.filter(x=> matchDesigner(x) && !(x.prazo||'')).length} sem prazo definido</div>
           </div>
         </div>
+        </div>
         
+      </div>
+    </div>
+  )
+}
+
+function ConfigView({ themeVars, setThemeVars }) {
+  const [localVars, setLocalVars] = useState(themeVars||{})
+  const [novoNome, setNovoNome] = useState('')
+  const [novoValor, setNovoValor] = useState('')
+  useEffect(()=>{ setLocalVars(themeVars||{}) }, [themeVars])
+  const hex6 = s => /^#[0-9a-fA-F]{6}$/.test(s||'')
+  const hex8 = s => /^#[0-9a-fA-F]{8}$/.test(s||'')
+  const rgba = s => /^rgba\((\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(0|1|0?\.\d+)\)$/.exec(s||'')
+  const toHex = n => Math.max(0, Math.min(255, n|0)).toString(16).padStart(2,'0')
+  const hexToRgbParts = (h) => ({ r: parseInt(h.slice(1,3),16), g: parseInt(h.slice(3,5),16), b: parseInt(h.slice(5,7),16) })
+  const parseVal = (v) => {
+    if (hex6(v)) return { fmt:'hex6', base:v, a:1 }
+    if (hex8(v)) return { fmt:'hex8', base:'#'+v.slice(1,7), a: parseInt(v.slice(7,9),16)/255 }
+    const m = rgba(v)
+    if (m) return { fmt:'rgba', base:'#'+toHex(+m[1])+toHex(+m[2])+toHex(+m[3]), a: parseFloat(m[4]) }
+    return { fmt:'other', base:v, a:1 }
+  }
+  const compose = (k, base, a) => {
+    const fmtPref = (k==='hover') ? 'rgba' : (k==='border' || k==='btnBorder') ? 'hex8' : 'hex6'
+    if (fmtPref==='hex6' || a>=1) return base
+    if (fmtPref==='hex8') return base + toHex(Math.round(a*255))
+    const { r,g,b } = hexToRgbParts(base)
+    return `rgba(${r},${g},${b},${a})`
+  }
+  const onChange = (k, v) => {
+    const nv = { ...localVars, [k]: v }
+    setLocalVars(nv)
+    setThemeVars(nv)
+  }
+  const onAlpha = (k, aPerc) => {
+    const info = parseVal(localVars[k]||'')
+    const a = Math.max(0, Math.min(100, Number(aPerc)||0))/100
+    const next = compose(k, info.base, a)
+    onChange(k, next)
+  }
+  const addVar = () => {
+    if (!novoNome) return
+    const nv = { ...localVars, [novoNome]: novoValor||'' }
+    setLocalVars(nv)
+    setThemeVars(nv)
+    setNovoNome('')
+    setNovoValor('')
+  }
+  const reset = () => setThemeVars(defaultTheme)
+  const groups = [
+    { title:'Base', keys:['bg','panel','accent'] },
+    { title:'Texto', keys:['text','muted'] },
+    { title:'Traçado', keys:['border'] },
+    { title:'Botões', keys:['btnBg','btnText','btnHoverBg','btnBorder'] },
+    { title:'Hover/Efeitos', keys:['hover','shadow'] },
+    { title:'Extras', keys:['green','yellow','red','chart'] },
+  ]
+  return (
+    <div className="panel">
+      <div className="tabs">
+        <button className="tab active">Tema</button>
+      </div>
+      <div className="config-grid">
+        {groups.map(g=> (
+          <div key={g.title} className="card">
+            <div className="title">{g.title}</div>
+            {g.keys.map(k=>{
+              const v = localVars[k]||''
+              const info = parseVal(v)
+              const isColorish = info.fmt!=='other'
+              const showAlpha = (k==='hover' || k==='border' || k==='btnBorder')
+              return (
+                <div className="form-row" key={k}>
+                  <label>{k}</label>
+                  <div className="color-row">
+                    {isColorish ? (
+                      <>
+                        <input type="color" value={info.base} onChange={e=> onChange(k, compose(k, e.target.value, info.a))} />
+                        {showAlpha && (
+                          <input className="alpha" type="range" min="0" max="100" step="1" value={Math.round(info.a*100)} onChange={e=> onAlpha(k, e.target.value)} title={`Alpha ${Math.round(info.a*100)}%`} />
+                        )}
+                      </>
+                    ) : (
+                      <input value={v} onChange={e=> onChange(k, e.target.value)} />
+                    )}
+                    <div className="swatch" style={{background:v}} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ))}
+        <div className="card" style={{gridColumn:'1 / -1'}}>
+          <div className="title">Adicionar variável</div>
+          <div className="color-row">
+            <input placeholder="nome" value={novoNome} onChange={e=>setNovoNome(e.target.value)} />
+            <input placeholder="valor" value={novoValor} onChange={e=>setNovoValor(e.target.value)} />
+            <button className="primary" type="button" onClick={addVar}>Adicionar</button>
+          </div>
+        </div>
+      </div>
+      <div className="modal-footer">
+        <button className="primary" type="button" onClick={reset}>Restaurar padrão</button>
+      </div>
+    </div>
+  )
+}
+function FilterBar({ filtros, setFiltros, designers }) {
+  const [period, setPeriod] = useState('today')
+  useEffect(()=>{
+    const d = new Date()
+    const toYMD = x => { const p = n=>String(n).padStart(2,'0'); return `${x.getFullYear()}-${p(x.getMonth()+1)}-${p(x.getDate())}` }
+    const startOfISOWeek = (ref) => { const r = new Date(ref); const day = r.getDay()||7; r.setDate(r.getDate() - (day-1)); return new Date(r.getFullYear(), r.getMonth(), r.getDate()) }
+    const endOfISOWeek = (ref) => { const s = startOfISOWeek(ref); const e = new Date(s); e.setDate(e.getDate()+6); return e }
+    const startOfMonth = new Date(d.getFullYear(), d.getMonth(), 1)
+    const endOfMonth = new Date(d.getFullYear(), d.getMonth()+1, 0)
+    const startOfLastMonth = new Date(d.getFullYear(), d.getMonth()-1, 1)
+    const endOfLastMonth = new Date(d.getFullYear(), d.getMonth(), 0)
+    if (period==='today') setFiltros(prev=>({ ...prev, cIni: toYMD(d), cFim: toYMD(d) }))
+    if (period==='week') { const s=startOfISOWeek(d), e=endOfISOWeek(d); setFiltros(prev=>({ ...prev, cIni: toYMD(s), cFim: toYMD(e) })) }
+    if (period==='month') setFiltros(prev=>({ ...prev, cIni: toYMD(startOfMonth), cFim: toYMD(endOfMonth) }))
+    if (period==='lastmonth') setFiltros(prev=>({ ...prev, cIni: toYMD(startOfLastMonth), cFim: toYMD(endOfLastMonth) }))
+    if (period==='last30') { const s = new Date(d); s.setDate(s.getDate()-29); setFiltros(prev=>({ ...prev, cIni: toYMD(s), cFim: toYMD(d) })) }
+  },[period])
+  const setDesigner = (v) => setFiltros(prev=> ({ ...prev, designer: v==='Todos'?'':v }))
+  const list = ['Hoje','Semana','Mês','Mês passado','Últimos 30 dias']
+  const keyOf = s => s==='Hoje'?'today': s==='Semana'?'week': s==='Mês'?'month': s==='Mês passado'?'lastmonth':'last30'
+  const designersKeys = ['Todos', ...designers]
+  return (
+    <div className="filterbar">
+      <div className="seg">
+        {list.map(lbl=> (
+          <button key={lbl} className={`btn-md ${period===keyOf(lbl)?'active':''}`} onClick={()=> setPeriod(keyOf(lbl))}>{lbl}</button>
+        ))}
+      </div>
+      <div className="seg">
+        {designersKeys.map(d=> (
+          <button key={d} className={`btn-md ${((filtros.designer||'')===d || (d==='Todos' && !filtros.designer))?'active':''}`} onClick={()=> setDesigner(d)}>{d}</button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, cadStatus, onDelete, onDuplicate, compact, calRef, setCalRef }) {
+  const count = (pred) => items.filter(pred).length
+  const countStatus = s => items.filter(x=> x.status===s).length
+  const kpi = [{ icon:'📅', title:'Criados no período', value: count(_=>true) }, { icon:'🏁', title:'Concluídos no período', value: count(x=> x.status==='Concluída') }, { icon:'📌', title:'Pendentes (Abertas)', value: countStatus('Aberta') }, { icon:'⚙', title:'Em produção', value: countStatus('Em Progresso') }]
+  const alerts = [
+    { label:'demandas atrasadas', color:'#FF6A6A', value: demandas.filter(x=> x.status!=='Concluída' && x.prazo && x.prazo < hojeISO()).length },
+    { label:'vencem amanhã', color:'#FFE55C', value: demandas.filter(x=> x.status!=='Concluída' && x.prazo===(()=>{ const d=new Date(); d.setDate(d.getDate()+1); const z=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}` })()).length },
+    { label:'sem designer atribuído', color:'#4DA3FF', value: demandas.filter(x=> !x.designer).length },
+    { label:'com mais de 2 revisões', color:'#6F2DBD', value: 0 },
+    { label:'sem prazo definido', color:'#BDBDBD', value: demandas.filter(x=> !x.prazo).length },
+  ]
+  const weekCounts = (arr) => {
+    const byDay = [0,0,0,0,0,0,0]
+    arr.forEach(x=>{ const d = new Date(x.dataCriacao||x.dataCriacao||hojeISO()); byDay[d.getDay()]++ })
+    return byDay
+  }
+  const criados = weekCounts(items)
+  const concluidos = weekCounts(items.filter(x=> x.status==='Concluída'))
+  const maxC = Math.max(...criados,1), maxD = Math.max(...concluidos,1)
+  const files = demandas.flatMap(x=> (x.arquivos||[])).slice(0,50)
+  const ganttData = demandas.filter(x=> x.prazo).map(x=> ({ titulo:x.titulo, inicio: x.dataCriacao || x.dataSolicitacao || hojeISO(), fim: x.prazo, status: x.status }))
+  const monthDays = (()=>{ const d=new Date(); const s= new Date(d.getFullYear(), d.getMonth(), 1); const e= new Date(d.getFullYear(), d.getMonth()+1, 0); return { start:s, end:e, len:e.getDate() } })()
+  const dayIndex = iso => { const [y,m,dd]=iso.split('-').map(Number); const dt = new Date(y,m-1,dd); return dt.getDate() }
+  const colorByStatus = s => s==='Aberta' ? '#4DA3FF' : s==='Em Progresso' ? '#FFE55C' : '#00C58E'
+  return (
+    <div className="dashboard">
+      <div className="widgets">
+        <div className="widget">
+          <div className="widget-title">KPIs principais</div>
+          <div className="kpi-grid">
+            {kpi.map(it=> (
+              <div key={it.title} className="kpi">
+                <div className="widget-title">{it.icon} {it.title}</div>
+                <div className="kpi-value">{it.value}</div>
+                <div className="kpi-trend">↑ 12% vs período anterior</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="widget">
+          <div className="widget-title">KPIs operacionais</div>
+          <div className="badge-grid">
+            <div className="badge blue">Pendente {countStatus('Aberta')}</div>
+            <div className="badge yellow">Em produção {countStatus('Em Progresso')}</div>
+            <div className="badge purple">Aguardando feedback 0</div>
+            <div className="badge green">Aprovada {countStatus('Concluída')}</div>
+            <div className="badge red">Atrasada {alerts[0].value}</div>
+          </div>
+        </div>
+        <div className="widget">
+          <div className="widget-title">Criados por dia</div>
+          {criados.map((v,i)=> (
+            <div key={i} className="hbar"><div className="hfill" style={{width:`${Math.round(100*v/maxC)}%`, background:'#4DA3FF'}} /><div className="hval">{v}</div></div>
+          ))}
+        </div>
+        <div className="widget">
+          <div className="widget-title">Concluídos por dia</div>
+          {concluidos.map((v,i)=> (
+            <div key={i} className="hbar"><div className="hfill" style={{width:`${Math.round(100*v/maxD)}%`, background:'#00C58E'}} /><div className="hval">{v}</div></div>
+          ))}
+        </div>
+        <div className="widget">
+          <div className="widget-title">Alertas importantes</div>
+          {alerts.map(a=> (
+            <div key={a.label} className="card" style={{borderColor:a.color}}>
+              <div className="title">{a.label}</div>
+              <div>{a.value}</div>
+            </div>
+          ))}
+        </div>
+        <div className="widget">
+          <div className="widget-title">Calendário</div>
+          <div className="calendar-toolbar">
+            <button onClick={()=> setView('table')}>Voltar</button>
+            <div className="spacer" />
+            <button onClick={()=> setCalRef(new Date(calRef.getFullYear(), calRef.getMonth()-1, 1))}>◀</button>
+            <button onClick={()=> setCalRef(new Date())}>Hoje</button>
+            <button onClick={()=> setCalRef(new Date(calRef.getFullYear(), calRef.getMonth()+1, 1))}>▶</button>
+          </div>
+          <CalendarView items={items} refDate={calRef} />
+        </div>
+        <div className="widget">
+          <div className="widget-title">Tabela</div>
+          <TableView items={items} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={false} showMore={()=>{}} canCollapse={false} showLess={()=>{}} shown={items.length} total={items.length} compact={compact} />
+        </div>
+        <div className="widget">
+          <div className="widget-title">Board</div>
+          <BoardView items={items} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} compact={compact} />
+        </div>
+        <div className="widget">
+          <div className="widget-title">Gantt (por prazo)</div>
+          <div className="gantt">
+            {ganttData.map(row=> {
+              const sIdx = dayIndex(row.inicio)
+              const eIdx = dayIndex(row.fim)
+              const startPct = Math.round(sIdx/monthDays.len*100)
+              const durPct = Math.max(2, Math.round((eIdx - sIdx + 1)/monthDays.len*100))
+              return (
+                <div key={row.titulo} className="gantt-row" onClick={()=> onEdit(demandas.find(d=> d.titulo===row.titulo && d.prazo===row.fim))}>
+                  <div style={{width:120,color:'var(--muted)'}}>{row.titulo}</div>
+                  <div style={{position:'relative',width:'100%'}}>
+                    <div className="gantt-bar" style={{position:'absolute',left:`${startPct}%`,width:`${durPct}%`,background:colorByStatus(row.status)}} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+      <div className="widget">
+        <div className="widget-title">Arquivos recentes</div>
+        <div className="files-widget">
+          {files.length===0 ? <div className="empty">Sem arquivos</div> : files.map((f,i)=> {
+            const parent = demandas.find(d=> (d.arquivos||[]).some(a=> a.url===f.url)) || {}
+            return (
+              <div key={i} style={{display:'flex',alignItems:'center',gap:8,background:'#0D0D0D',border:'1px solid #FFFFFF18',borderRadius:12,padding:8,width:'100%'}}>
+                <img className="file" src={f.url} alt={f.name} />
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:600}}>{f.name||'arquivo'}</div>
+                  <div style={{fontSize:12,color:'var(--muted)'}}>{statusLabel(parent.status||'')}</div>
+                </div>
+                <a className="btn-md" href={f.url} target="_blank" rel="noreferrer">Abrir</a>
+              </div>
+            )
+          })}
+        </div>
+        <div className="widget-title" style={{marginTop:16}}>Designers</div>
+        <div className="designers-list">
+          {designers.map(d=> {
+            const countPeriod = items.filter(x=> x.designer===d).length
+            const active = countPeriod>0
+            return (
+              <div key={d} className="designer-row" style={{justifyContent:'space-between'}}>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <div className="avatar-lg">{String(d||'').slice(0,2).toUpperCase()}</div>
+                  <div>{d}</div>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <span className="pill" style={{color: active?'#00C58E':'#BDBDBD', borderColor: active?'#00C58E':'#BDBDBD'}}>{active?'Ativo':'Inativo'}</span>
+                  <span className="pill" style={{color:'#4DA3FF',borderColor:'#4DA3FF'}}>{countPeriod}</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
