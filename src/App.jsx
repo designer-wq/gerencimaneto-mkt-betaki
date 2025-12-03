@@ -31,6 +31,24 @@ const ler = () => { try { return JSON.parse(localStorage.getItem('demandas')||'[
 const gravar = arr => localStorage.setItem('demandas', JSON.stringify(arr))
 const proxId = arr => arr.length ? Math.max(...arr.map(x=>x.id))+1 : 1
 
+function Counter({ value }) {
+  const [v, setV] = useState(0)
+  useEffect(()=>{
+    let start = 0
+    const target = Math.max(0, Number(value)||0)
+    const steps = 20
+    const inc = Math.max(1, Math.round(target/steps))
+    setV(0)
+    const id = setInterval(()=>{
+      start += inc
+      if (start >= target) { setV(target); clearInterval(id) }
+      else setV(start)
+    }, 25)
+    return ()=> clearInterval(id)
+  },[value])
+  return <span>{v}</span>
+}
+
 function Header({ onNew, view, setView }) {
   return (
     <div className="topbar">
@@ -73,9 +91,9 @@ function ViewButtonsInner({ view, setView }) {
   )
 }
 
-function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus }) {
+function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus, cadPlataformas }) {
   const set = (k,v)=>setFiltros(prev=>({ ...prev, [k]: v }))
-  const clear = ()=>setFiltros({designer:'',status:'',cIni:'',cFim:'',sIni:'',sFim:''})
+  const clear = ()=>setFiltros({designer:'',status:'',plataforma:'',cIni:'',cFim:'',sIni:'',sFim:''})
   if (!open) return null
   return (
     <div className="modal" onClick={onClose}>
@@ -111,6 +129,12 @@ function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus 
               <input type="date" value={filtros.sFim} onChange={e=>set('sFim', e.target.value)} />
             </div>
           </div>
+          <div className="form-row"><label>Plataforma</label>
+            <select value={filtros.plataforma||''} onChange={e=>set('plataforma', e.target.value)}>
+              <option value="">Plataforma</option>
+              {cadPlataformas.map(p=> <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
         </div>
         <div className="modal-footer">
           <button className="icon" onClick={clear}>🧹 Limpar</button>
@@ -126,6 +150,7 @@ function aplicarFiltros(items, f) {
     if (f.q && !(it.titulo||'').toLowerCase().includes(f.q.toLowerCase())) return false
     if (f.designer && it.designer !== f.designer) return false
     if (f.status && it.status !== f.status) return false
+    if (f.plataforma && (it.plataforma||'') !== f.plataforma) return false
     if (f.cIni && it.dataCriacao < f.cIni) return false
     if (f.cFim && it.dataCriacao > f.cFim) return false
     if (f.sIni && it.dataSolicitacao < f.sIni) return false
@@ -134,7 +159,9 @@ function aplicarFiltros(items, f) {
   })
 }
 
-function TableView({ items, onEdit, onStatus, cadStatus, onDelete, hasMore, showMore, canCollapse, showLess, shown, total }) {
+function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, hasMore, showMore, canCollapse, showLess, shown, total }) {
+  const [menuOpen, setMenuOpen] = useState(null)
+  const toggleMenu = (id) => setMenuOpen(prev => prev===id ? null : id)
   return (
     <div className="table">
       <table>
@@ -148,6 +175,7 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, hasMore, show
             <th>Plataforma</th>
             <th>Link</th>
             <th>File</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -174,6 +202,16 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, hasMore, show
                     ))}
                   </div>
                 ) : (it.arquivoNome || '')}
+              </td>
+              <td className="actions-cell" onClick={e=>e.stopPropagation()}>
+                <button className="icon" onClick={()=>toggleMenu(it.id)}>⋮</button>
+                {menuOpen===it.id && (
+                  <div className="actions-pop">
+                    <button className="icon" onClick={()=>onEdit(it)}>✏️ Editar</button>
+                    <button className="icon" onClick={()=>onDuplicate(it)}>📄 Duplicar</button>
+                    <button className="icon" onClick={()=>onStatus(it.id, 'Concluída')}>✅ Concluir</button>
+                  </div>
+                )}
               </td>
             </tr>
           ))}
@@ -256,9 +294,10 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
   const [arquivos, setArquivos] = useState(initial?.arquivos || [])
   const [dataCriacao, setDataCriacao] = useState(initial?.dataCriacao || hojeISO())
   const [descricao, setDescricao] = useState(initial?.descricao || '')
+  const [prazo, setPrazo] = useState(initial?.prazo || '')
   useEffect(()=>{
-    setDesigner(initial?.designer || (cadDesigners?.[0] || ''))
-    setTipoMidia(initial?.tipoMidia || (cadTipos?.[0] || 'Post'))
+    setDesigner(initial?.designer || '')
+    setTipoMidia(initial?.tipoMidia || 'Post')
     setTitulo(initial?.titulo || '')
     setLink(initial?.link || '')
     setArquivoNome('')
@@ -267,6 +306,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
     setArquivos(initial?.arquivos || [])
     setDataCriacao(initial?.dataCriacao || hojeISO())
     setDescricao(initial?.descricao || '')
+    setPrazo(initial?.prazo || '')
   },[initial, open, cadDesigners, cadTipos, cadPlataformas])
   if (!open) return null
   const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, plataforma, arquivos, descricao }) }
@@ -305,6 +345,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
             </div>
             {mode!=='create' && <div className="form-row"><label>Data de Criação</label><input type="date" value={dataCriacao} disabled /></div>}
             <div className="form-row"><label>Data de Solicitação</label><input type="date" value={dataSolic} onChange={e=>setDataSolic(e.target.value)} disabled={mode==='create'} /></div>
+            <div className="form-row"><label>Prazo</label><input type="date" value={prazo} onChange={e=>setPrazo(e.target.value)} /></div>
           </div>
           <div className="form-row"><label>Descrição</label><textarea rows={3} value={descricao} onChange={e=>setDescricao(e.target.value)} /></div>
           <div className="modal-footer">
@@ -370,7 +411,7 @@ export default function App() {
   const [demandas, setDemandas] = useState(ler())
   const [view, setView] = useState('table')
   const [route, setRoute] = useState('demandas')
-  const [filtros, setFiltros] = useState({designer:'',status:'',cIni:'',cFim:'',sIni:'',sFim:''})
+  const [filtros, setFiltros] = useState({designer:'',status:'',plataforma:'',cIni:'',cFim:'',sIni:'',sFim:''})
   const [filterOpen, setFilterOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [modalMode, setModalMode] = useState('create')
@@ -408,11 +449,28 @@ export default function App() {
 
   const onNew = ()=>{ setModalMode('create'); setEditing(null); setModalOpen(true) }
   const onEdit = it => { setModalMode('edit'); setEditing(it); setModalOpen(true) }
+  const onDuplicate = async (it) => {
+    const base = { ...it, id: undefined, status: 'Aberta', dataSolicitacao: hojeISO(), dataCriacao: hojeISO() }
+    if (apiEnabled) {
+      const saved = await api.createDemanda(base)
+      setDemandas(prev=> [...prev, { ...base, id: saved?.id ?? proxId(prev) }])
+    } else {
+      const nextId = proxId(demandas)
+      setDemandas(prev=> [...prev, { ...base, id: nextId }])
+    }
+  }
   const onStatus = async (id, status) => {
-    setDemandas(prev=> prev.map(x=> x.id===id ? { ...x, status } : x))
+    const today = hojeISO()
+    setDemandas(prev=> prev.map(x=> {
+      if (x.id!==id) return x
+      const changed = x.status !== status
+      const revisoes = changed ? (x.revisoes||0)+1 : (x.revisoes||0)
+      const dataConclusao = status==='Concluída' ? (x.dataConclusao||today) : x.dataConclusao
+      return { ...x, status, revisoes, dataConclusao }
+    }))
     if (apiEnabled) {
       const found = demandas.find(x=>x.id===id)
-      if (found) await api.updateDemanda(id, { ...found, status })
+      if (found) await api.updateDemanda(id, { ...found, status, dataConclusao: status==='Concluída' ? (found.dataConclusao||today) : found.dataConclusao, revisoes: (found.revisoes||0) + (found.status!==status?1:0) })
     }
   }
   const onDelete = async (id) => {
@@ -421,11 +479,11 @@ export default function App() {
   }
   const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, plataforma, arquivos, descricao }) => {
     if (modalMode==='edit' && editing) {
-      const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, plataforma }
+      const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, plataforma, prazo }
       setDemandas(prev=> prev.map(x=> x.id===editing.id ? updated : x))
       if (apiEnabled) await api.updateDemanda(editing.id, updated)
     } else {
-      const novo = { designer, tipoMidia, titulo, link, descricao, arquivos: (arquivos||[]), arquivoNome, plataforma, dataSolicitacao: hojeISO(), dataCriacao: hojeISO(), status: 'Aberta' }
+      const novo = { designer, tipoMidia, titulo, link, descricao, arquivos: (arquivos||[]), arquivoNome, plataforma, dataSolicitacao: hojeISO(), dataCriacao: hojeISO(), status: 'Aberta', prazo }
       if (apiEnabled) {
         const saved = await api.createDemanda(novo)
         setDemandas(prev=> [...prev, { ...novo, id: saved?.id ?? proxId(prev) }])
@@ -449,7 +507,7 @@ export default function App() {
         <div className="app">
           <Header onNew={onNew} view={view} setView={setView} />
           {route==='demandas' && <FilterButton onOpen={()=>setFilterOpen(true)} view={view} setView={setView} filtros={filtros} setFiltros={setFiltros} />}
-          {route==='demandas' && view==='table' && <TableView items={itemsSorted.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} hasMore={itemsSorted.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsSorted.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsSorted.length)} total={itemsSorted.length} />}
+          {route==='demandas' && view==='table' && <TableView items={itemsSorted.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsSorted.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsSorted.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsSorted.length)} total={itemsSorted.length} />}
           {route==='demandas' && view==='board' && <BoardView items={items} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} />}
           {route==='demandas' && view==='calendar' && (
           <div className="calendar-wrap">
@@ -466,7 +524,7 @@ export default function App() {
           {route==='demandas' && (
             <>
           <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} cadDesigners={cadDesigners} cadPlataformas={cadPlataformas} onDelete={onDelete} />
-              <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designers} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} />
+              <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designers} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} cadPlataformas={cadPlataformas} />
             </>
           )}
           {route==='cadastros' && (
@@ -509,12 +567,14 @@ function ReportsView({ demandas, designers }) {
     const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1)/7)
     return `${date.getUTCFullYear()}-W${pad(weekNo)}`
   }
+  const norm = s => (s||'').trim()
+  const designersKeys = Array.from(new Set(designers.filter(Boolean).map(norm))).sort()
   const hoje = new Date()
   const hojeStr = toYMD(hoje)
   const semanaKey = isoWeek(hoje)
   const mesKey = toYM(hoje)
   const mesPassadoKey = toYM(new Date(hoje.getFullYear(), hoje.getMonth()-1, 1))
-  const countBy = (designer, pred) => demandas.filter(x=> x.designer===designer && pred(x)).length
+  const countBy = (designerKey, pred) => demandas.filter(x=> norm(x.designer)===designerKey && pred(x)).length
   const rows = [
     { label: 'Criados Hoje', get: d => countBy(d, x=> x.dataCriacao===hojeStr) },
     { label: 'Criados na Semana', get: d => countBy(d, x=> isoWeek(new Date(x.dataCriacao))===semanaKey) },
@@ -522,47 +582,130 @@ function ReportsView({ demandas, designers }) {
     { label: 'Total Criado Mês Passado', get: d => countBy(d, x=> toYM(new Date(x.dataCriacao))===mesPassadoKey) },
     { label: 'Total Criado', get: d => countBy(d, _=> true) },
   ]
+  const countDoneBy = (designerKey, pred) => demandas.filter(x=> norm(x.designer)===designerKey && x.status==='Concluída' && pred(x)).length
+  const rowsDone = [
+    { label: 'Total Concluído', get: d => countDoneBy(d, _=> true) },
+  ]
   const tipos = useMemo(()=> Array.from(new Set(demandas.map(x=> x.tipoMidia).filter(Boolean))).sort(), [demandas])
   const countTipoConcluida = (tipo) => demandas.filter(x=> x.tipoMidia===tipo && x.status==='Concluída').length
+  const [period, setPeriod] = useState('today')
+  const [customIni, setCustomIni] = useState('')
+  const [customFim, setCustomFim] = useState('')
+  const startEnd = useMemo(()=>{
+    const d = new Date()
+    const startOfMonth = new Date(d.getFullYear(), d.getMonth(), 1)
+    const endOfMonth = new Date(d.getFullYear(), d.getMonth()+1, 0)
+    const startOfLastMonth = new Date(d.getFullYear(), d.getMonth()-1, 1)
+    const endOfLastMonth = new Date(d.getFullYear(), d.getMonth(), 0)
+    const startOfISOWeek = (ref) => { const r = new Date(ref); const day = r.getDay()||7; r.setDate(r.getDate() - (day-1)); return new Date(r.getFullYear(), r.getMonth(), r.getDate()) }
+    const endOfISOWeek = (ref) => { const s = startOfISOWeek(ref); const e = new Date(s); e.setDate(e.getDate()+6); return e }
+    if (period==='today') return { ini: toYMD(d), fim: toYMD(d) }
+    if (period==='week') { const s = startOfISOWeek(d); const e = endOfISOWeek(d); return { ini: toYMD(s), fim: toYMD(e) } }
+    if (period==='month') return { ini: toYMD(startOfMonth), fim: toYMD(endOfMonth) }
+    if (period==='last_month') return { ini: toYMD(startOfLastMonth), fim: toYMD(endOfLastMonth) }
+    if (period==='last_30') { const e = d; const s = new Date(d); s.setDate(s.getDate()-29); return { ini: toYMD(s), fim: toYMD(e) } }
+    if (period==='custom' && customIni && customFim) return { ini: customIni, fim: customFim }
+    return { ini: toYMD(startOfMonth), fim: toYMD(endOfMonth) }
+  },[period, customIni, customFim])
+  const prevStartEnd = useMemo(()=>{
+    const parse = (s)=>{ const [y,m,dd]=s.split('-').map(Number); return new Date(y,m-1,dd) }
+    const iniD = parse(startEnd.ini); const fimD = parse(startEnd.fim)
+    const days = Math.round((fimD - iniD)/86400000)+1
+    const shift = (ref, n)=>{ const r = new Date(ref); r.setDate(r.getDate()-n); return r }
+    const iniPrev = shift(iniD, days)
+    const fimPrev = shift(fimD, days)
+    return { ini: toYMD(iniPrev), fim: toYMD(fimPrev) }
+  },[startEnd])
+  const inRange = (ymd, r) => ymd >= r.ini && ymd <= r.fim
+  const totalCriadosPeriodo = demandas.filter(x=> inRange(x.dataCriacao, startEnd)).length
+  const totalConcluidosPeriodo = demandas.filter(x=> x.status==='Concluída' && inRange(x.dataCriacao, startEnd)).length
+  const prevCriados = demandas.filter(x=> inRange(x.dataCriacao, prevStartEnd)).length
+  const prevConcluidos = demandas.filter(x=> x.status==='Concluída' && inRange(x.dataCriacao, prevStartEnd)).length
+  const varCriados = prevCriados ? Math.round(((totalCriadosPeriodo - prevCriados)/prevCriados)*100) : (totalCriadosPeriodo?100:0)
+  const varConcluidos = prevConcluidos ? Math.round(((totalConcluidosPeriodo - prevConcluidos)/prevConcluidos)*100) : (totalConcluidosPeriodo?100:0)
+  const weekDays = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
+  const weekdayCounts = useMemo(()=>{
+    const parse = (s)=>{ const [y,m,dd]=s.split('-').map(Number); return new Date(y,m-1,dd) }
+    const map = Array(7).fill(0)
+    const mapDone = Array(7).fill(0)
+    demandas.forEach(x=>{
+      const d = parse(x.dataCriacao)
+      const ymd = toYMD(d)
+      if (inRange(ymd, startEnd)) { const wd = d.getDay(); map[wd]++; if (x.status==='Concluída') mapDone[wd]++ }
+    })
+    return { created: map, done: mapDone }
+  },[demandas, startEnd])
   return (
     <div className="reports">
       <div className="panel">
-        <div className="report-matrix">
-          <table>
-            <thead>
-              <tr>
-                <th>Títulos</th>
-                {designers.map(d=> <th key={d}>{d}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(r => (
-                <tr key={r.label}>
-                  <td>{r.label}</td>
-                  {designers.map(d => <td key={d+r.label}>{r.get(d)}</td>)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="reports-toolbar">
+          <div>Período</div>
+          <select value={period} onChange={e=> setPeriod(e.target.value)}>
+            <option value="today">Hoje</option>
+            <option value="week">Esta semana</option>
+            <option value="month">Este mês</option>
+            <option value="last_month">Mês passado</option>
+            <option value="last_30">Últimos 30 dias</option>
+            <option value="custom">Personalizado</option>
+          </select>
+          {period==='custom' && (
+            <>
+              <input type="date" value={customIni} onChange={e=>setCustomIni(e.target.value)} />
+              <span>–</span>
+              <input type="date" value={customFim} onChange={e=>setCustomFim(e.target.value)} />
+            </>
+          )}
         </div>
-        <div className="report-matrix">
-          <table>
-            <thead>
-              <tr>
-                <th>Tipo</th>
-                <th>Concluídas</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tipos.map(t => (
-                <tr key={t}>
-                  <td>{t}</td>
-                  <td>{countTipoConcluida(t)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="metrics-grid">
+          <div className="metric-card">
+            <div className="metric-title">📅 Criados no período</div>
+            <div className="metric-value"><Counter value={totalCriadosPeriodo} /></div>
+            <div className="today-meta">{varCriados>=0?'⬆':'⬇'} {Math.abs(varCriados)}% vs período anterior</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-title">🏁 Concluídos no período</div>
+            <div className="metric-value"><Counter value={totalConcluidosPeriodo} /></div>
+            <div className="today-meta">{varConcluidos>=0?'⬆':'⬇'} {Math.abs(varConcluidos)}% vs período anterior</div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-title">Pendentes (Aberta)</div>
+            <div className="metric-value"><Counter value={demandas.filter(x=> x.status==='Aberta' && inRange(x.dataCriacao, startEnd)).length} /></div>
+          </div>
+          <div className="metric-card">
+            <div className="metric-title">Em produção</div>
+            <div className="metric-value"><Counter value={demandas.filter(x=> x.status==='Em Progresso' && inRange(x.dataCriacao, startEnd)).length} /></div>
+          </div>
         </div>
+        <div className="report-card">
+          <div className="report-title">📊 Criados/Concluídos por dia da semana</div>
+          <div className="chart">
+            {weekDays.map((w,i)=>{
+              const maxv = Math.max(...weekdayCounts.created, ...weekdayCounts.done, 1)
+              const created = weekdayCounts.created[i]
+              const done = weekdayCounts.done[i]
+              const cw = Math.round((created/maxv)*100)
+              const dw = Math.round((done/maxv)*100)
+              return (
+                <div key={w} className="chart-row">
+                  <div className="chart-label">{w}</div>
+                  <div className="chart-bar"><div className="chart-fill" style={{ width: cw+'%', background: 'var(--accent)' }}></div><div className="chart-value">{created}</div></div>
+                  <div className="chart-bar"><div className="chart-fill" style={{ width: dw+'%', background: '#bdbdbd' }}></div><div className="chart-value">{done}</div></div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+        <div className="report-card">
+          <div className="report-title">🔥 Alertas importantes</div>
+          <div className="today-list">
+            <div className="today-item">⚠ {demandas.filter(x=> (x.prazo||'') && x.status!=='Concluída' && x.prazo < toYMD(new Date())).length} demandas atrasadas</div>
+            <div className="today-item">⏳ {demandas.filter(x=> (x.prazo||'') && x.status!=='Concluída' && x.prazo===toYMD(new Date(new Date().setDate(new Date().getDate()+1)))).length} vencem amanhã</div>
+            <div className="today-item">❗ {demandas.filter(x=> !norm(x.designer)).length} sem designer atribuído</div>
+            <div className="today-item">🔁 {demandas.filter(x=> (x.revisoes||0) >= 3).length} com mais de 2 revisões</div>
+            <div className="today-item">📌 {demandas.filter(x=> !(x.prazo||'')).length} sem prazo definido</div>
+          </div>
+        </div>
+        
       </div>
     </div>
   )
