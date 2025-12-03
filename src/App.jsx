@@ -1053,82 +1053,8 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
             </div>
           ))}
         </div>
-        <div className="widget">
-          <div className="widget-title">Calendário</div>
-          <div className="calendar-toolbar">
-            <button onClick={()=> setView('table')}>Voltar</button>
-            <div className="spacer" />
-            <button onClick={()=> setCalRef(new Date(calRef.getFullYear(), calRef.getMonth()-1, 1))}>◀</button>
-            <button onClick={()=> setCalRef(new Date())}>Hoje</button>
-            <button onClick={()=> setCalRef(new Date(calRef.getFullYear(), calRef.getMonth()+1, 1))}>▶</button>
-          </div>
-          <CalendarView items={items} refDate={calRef} />
-        </div>
-        <div className="widget">
-          <div className="widget-title">Tabela</div>
-          <TableView items={items} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={false} showMore={()=>{}} canCollapse={false} showLess={()=>{}} shown={items.length} total={items.length} compact={compact} />
-        </div>
-        <div className="widget">
-          <div className="widget-title">Board</div>
-          <BoardView items={items} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} compact={compact} />
-        </div>
-        <div className="widget">
-          <div className="widget-title">Gantt (por prazo)</div>
-          <div className="gantt">
-            {ganttData.map(row=> {
-              const sIdx = dayIndex(row.inicio)
-              const eIdx = dayIndex(row.fim)
-              const startPct = Math.round(sIdx/monthDays.len*100)
-              const durPct = Math.max(2, Math.round((eIdx - sIdx + 1)/monthDays.len*100))
-              return (
-                <div key={row.titulo} className="gantt-row" onClick={()=> onEdit(demandas.find(d=> d.titulo===row.titulo && d.prazo===row.fim))}>
-                  <div style={{width:120,color:'var(--muted)'}}>{row.titulo}</div>
-                  <div style={{position:'relative',width:'100%'}}>
-                    <div className="gantt-bar" style={{position:'absolute',left:`${startPct}%`,width:`${durPct}%`,background:colorByStatus(row.status)}} />
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
       </div>
-      <div className="widget">
-        <div className="widget-title">Arquivos recentes</div>
-        <div className="files-widget">
-          {files.length===0 ? <div className="empty">Sem arquivos</div> : files.map((f,i)=> {
-            const parent = demandas.find(d=> (d.arquivos||[]).some(a=> a.url===f.url)) || {}
-            return (
-              <div key={i} style={{display:'flex',alignItems:'center',gap:8,background:'#0D0D0D',border:'1px solid #FFFFFF18',borderRadius:12,padding:8,width:'100%'}}>
-                <img className="file" src={f.url} alt={f.name} />
-                <div style={{flex:1}}>
-                  <div style={{fontWeight:600}}>{f.name||'arquivo'}</div>
-                  <div style={{fontSize:12,color:'var(--muted)'}}>{statusLabel(parent.status||'')}</div>
-                </div>
-                <a className="btn-md" href={f.url} target="_blank" rel="noreferrer">Abrir</a>
-              </div>
-            )
-          })}
-        </div>
-        <div className="widget-title" style={{marginTop:16}}>Designers</div>
-        <div className="designers-list">
-          {designers.map(d=> {
-            const countPeriod = items.filter(x=> x.designer===d).length
-            const active = countPeriod>0
-            return (
-              <div key={d} className="designer-row" style={{justifyContent:'space-between'}}>
-                <div style={{display:'flex',alignItems:'center',gap:8}}>
-                  <div className="avatar-lg">{String(d||'').slice(0,2).toUpperCase()}</div>
-                  <div>{d}</div>
-                </div>
-                <div style={{display:'flex',alignItems:'center',gap:8}}>
-                  <span className="pill" style={{color: active?'#00C58E':'#BDBDBD', borderColor: active?'#00C58E':'#BDBDBD'}}>{active?'Ativo':'Inativo'}</span>
-                  <span className="pill" style={{color:'#4DA3FF',borderColor:'#4DA3FF'}}>{countPeriod}</span>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
+      
     </div>
   )
 }

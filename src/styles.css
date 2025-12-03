@@ -171,8 +171,8 @@ a:hover{opacity:.85}
   .metrics-grid{grid-template-columns:1fr}
 }
 .sparkline{margin-top:6px}
-.dashboard{display:grid;grid-template-columns:3fr 1fr;gap:24px}
-.widgets{display:grid;grid-template-columns:repeat(2,1fr);gap:24px}
+.dashboard{display:block}
+.widgets{display:grid;grid-template-columns:1fr;gap:24px}
 .widget{background:#0D0D0D;border:1px solid #FFFFFF18;border-radius:16px;padding:24px;box-shadow:var(--shadow, 0 10px 30px rgba(0,0,0,.15))}
 .widget-title{font-size:14px;font-weight:600;color:rgba(242,242,242,.8);display:flex;align-items:center;gap:8px;margin-bottom:12px}
 .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:24px}
