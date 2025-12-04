@@ -217,6 +217,8 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
   const pad = n => String(n).padStart(2,'0')
   const isoWeek = d => { const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const dayNum = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() + 4 - dayNum); const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1)); const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1)/7); return `${date.getUTCFullYear()}-W${pad(weekNo)}` }
   const thisWeek = isoWeek(new Date())
+  const diffDays = (a,b)=>{ const toD=s=>{ if(!s) return null; const [y,m,dd]=String(s).split('-').map(Number); return new Date(y,m-1,dd) }; const da=toD(a), db=toD(b); if(!da||!db) return ''; return Math.round((db - da)/86400000) }
+  const fmtDM = (s)=>{ if(!s) return ''; const [y,m,d]=String(s).split('-').map(Number); const dd=String(d).padStart(2,'0'); const ab=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][Math.max(0,Math.min(11,(m-1)||0))]; return `${dd}.${ab}` }
   return (
     <div className={`table ${compact?'compact':''}`}>
       <table>
@@ -226,6 +228,8 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
             <th>Designer</th>
             <th>Status</th>
             <th>Data de Solicitação</th>
+            <th>Data de Criação</th>
+            <th>Prazo (dias)</th>
             <th>Tipo</th>
             <th>Plataforma</th>
             <th>Link</th>
@@ -244,7 +248,9 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
                   {FIXED_STATUS.map(s=> <option key={s} value={s}>{statusWithDot(s)}</option>)}
                 </select>
               </td>
-              <td>{it.dataSolicitacao}</td>
+              <td>{fmtDM(it.dataSolicitacao)}</td>
+              <td>{fmtDM(it.dataCriacao)}</td>
+              <td>{diffDays(it.dataCriacao, it.prazo)}</td>
               <td>{it.tipoMidia}</td>
               <td>{it.plataforma || ''}</td>
               <td>{it.link ? <a href={it.link} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}>Visualizar</a> : ''}</td>
@@ -395,10 +401,10 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
   const [titulo, setTitulo] = useState(initial?.titulo || '')
   const [link, setLink] = useState(initial?.link || '')
   const [arquivoNome, setArquivoNome] = useState('')
-  const [dataSolic, setDataSolic] = useState(initial?.dataSolicitacao || hojeISO())
+  const [dataSolic, setDataSolic] = useState(initial?.dataSolicitacao || '')
   const [plataforma, setPlataforma] = useState(initial?.plataforma || '')
   const [arquivos, setArquivos] = useState(initial?.arquivos || [])
-  const [dataCriacao, setDataCriacao] = useState(initial?.dataCriacao || hojeISO())
+  const [dataCriacao, setDataCriacao] = useState(initial?.dataCriacao || '')
   const [descricao, setDescricao] = useState(initial?.descricao || '')
   const [prazo, setPrazo] = useState(initial?.prazo || '')
   useEffect(()=>{
@@ -407,15 +413,15 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
     setTitulo(initial?.titulo || '')
     setLink(initial?.link || '')
     setArquivoNome('')
-    setDataSolic(initial?.dataSolicitacao || hojeISO())
+    setDataSolic(initial?.dataSolicitacao || '')
     setPlataforma(initial?.plataforma || (cadPlataformas?.[0] || ''))
     setArquivos(initial?.arquivos || [])
-    setDataCriacao(initial?.dataCriacao || hojeISO())
+    setDataCriacao(initial?.dataCriacao || '')
     setDescricao(initial?.descricao || '')
     setPrazo(initial?.prazo || '')
   },[initial, open, cadDesigners, cadTipos, cadPlataformas])
   if (!open) return null
-  const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, plataforma, arquivos, descricao, prazo }) }
+  const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo }) }
   return (
     <div className="modal" onClick={mode==='create'? undefined : onClose}>
       <div className="modal-dialog" onClick={e=>e.stopPropagation()}>
@@ -450,7 +456,8 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
               }} />
             </div>
             
-            <div className="form-row"><label>Data de Solicitação</label><input type="date" value={dataSolic} onChange={e=>setDataSolic(e.target.value)} disabled={mode==='create'} /></div>
+            <div className="form-row"><label>Data de Solicitação</label><input type="date" value={dataSolic} onChange={e=>setDataSolic(e.target.value)} required /></div>
+            <div className="form-row"><label>Data de Criação</label><input type="date" value={dataCriacao} onChange={e=>setDataCriacao(e.target.value)} required /></div>
             <div className="form-row"><label>Prazo</label><input type="date" value={prazo} onChange={e=>setPrazo(e.target.value)} /></div>
           </div>
           <div className="form-row"><label>Descrição</label><textarea rows={3} value={descricao} onChange={e=>setDescricao(e.target.value)} /></div>
@@ -592,13 +599,13 @@ export default function App() {
     setDemandas(prev=> prev.filter(x=> x.id!==id))
     if (apiEnabled) await api.deleteDemanda(id)
   }
-  const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, plataforma, arquivos, descricao, prazo }) => {
+  const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo }) => {
     if (modalMode==='edit' && editing) {
-      const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, plataforma, prazo }
+      const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, plataforma, prazo }
       setDemandas(prev=> prev.map(x=> x.id===editing.id ? updated : x))
       if (apiEnabled) await api.updateDemanda(editing.id, updated)
     } else {
-      const novo = { designer, tipoMidia, titulo, link, descricao, arquivos: (arquivos||[]), arquivoNome, plataforma, dataSolicitacao: hojeISO(), dataCriacao: hojeISO(), status: 'Aberta', prazo }
+      const novo = { designer, tipoMidia, titulo, link, descricao, arquivos: (arquivos||[]), arquivoNome, plataforma, dataSolicitacao: dataSolic, dataCriacao: dataCriacao, status: 'Aberta', prazo }
       if (apiEnabled) {
         const saved = await api.createDemanda(novo)
         setDemandas(prev=> [...prev, { ...novo, id: saved?.id ?? proxId(prev) }])
