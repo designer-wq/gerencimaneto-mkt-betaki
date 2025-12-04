@@ -951,7 +951,7 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros }) {
   })()
   const revisoesStats = (()=>{
     const per = {}
-    demandas.forEach(x=>{
+    items.forEach(x=>{
       const d = x.designer||'—'
       const r = x.revisoes||0
       const cur = per[d]||{ rTot:0, cnt:0 }
