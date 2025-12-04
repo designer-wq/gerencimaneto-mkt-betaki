@@ -121,10 +121,10 @@ function FilterButton({ onOpen, view, setView, filtros, setFiltros }) {
 
 function ViewButtonsInner({ view, setView }) {
   return (
-    <div className="views-inline">
-      <button className={`icon ${view==='table'?'active':''}`} title="Tabela" onClick={()=>setView('table')}>📄</button>
-      <button className={`icon ${view==='board'?'active':''}`} title="Quadro" onClick={()=>setView('board')}>🗂</button>
-      <button className={`icon ${view==='calendar'?'active':''}`} title="Calendário" onClick={()=>setView('calendar')}>📅</button>
+    <div className="tabs-inline">
+      <button className={`tab-btn ${view==='table'?'active':''}`} onClick={()=>setView('table')}><span className="icon">▦</span><span>Table</span></button>
+      <button className={`tab-btn ${view==='board'?'active':''}`} onClick={()=>setView('board')}><span className="icon">🗂</span><span>Board</span></button>
+      <button className={`tab-btn ${view==='calendar'?'active':''}`} onClick={()=>setView('calendar')}><span className="icon">🗓</span><span>Calendar</span></button>
     </div>
   )
 }
@@ -229,7 +229,6 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
             <th>Plataforma</th>
             <th>Link</th>
             <th>File</th>
-            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -259,16 +258,6 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
                   </div>
                 ) : (it.arquivoNome || '')}
               </td>
-              <td className="actions-cell" onClick={e=>e.stopPropagation()}>
-                <button className="icon" onClick={()=>toggleMenu(it.id)}>⋮</button>
-                {menuOpen===it.id && (
-                  <div className="actions-pop">
-                    <button className="icon" onClick={()=>onEdit(it)}>✏️ Editar</button>
-                    <button className="icon" onClick={()=>onDuplicate(it)}>📄 Duplicar</button>
-                    <button className="icon" onClick={()=>onStatus(it.id, 'Concluída')}>✅ Concluir</button>
-                  </div>
-                )}
-              </td>
             </tr>
           ))}
         </tbody>
@@ -292,13 +281,13 @@ function BoardView({ items, onEdit, onStatus, cadStatus, onDelete, compact }) {
   const available = new Set(cadStatus)
   const targetFor = (col) => available.has(col.map) ? col.map : (col.name==='Aguardando feedback' ? (available.has('Em Progresso')?'Em Progresso': cadStatus[0]) : (available.has('Concluída')?'Concluída': cadStatus[0]))
   const isInCol = (it, col) => {
-    const t = targetFor(col)
-    if (col.name==='Aguardando feedback') return (it.status||'').toLowerCase().includes('feedback') || it.status===t
-    if (col.name==='Pendente') return (it.status||'').includes('Aberta') || it.status===t
-    if (col.name==='Em produção') return it.status===t
-    if (col.name==='Aprovada') return (it.status||'').toLowerCase().includes('aprov') || it.status===t
-    if (col.name==='Concluída') return it.status===t
-    return it.status===t
+    const s = String(it.status||'')
+    if (col.name==='Pendente') return s==='Aberta'
+    if (col.name==='Em produção') return s==='Em Progresso'
+    if (col.name==='Aguardando feedback') return s.toLowerCase().includes('feedback') || s==='Aguardando feedback'
+    if (col.name==='Aprovada') return s.toLowerCase().includes('aprov') || s==='Aprovada'
+    if (col.name==='Concluída') return s==='Concluída'
+    return s===col.map
   }
   const onDropCol = (e, col) => {
     e.preventDefault()
@@ -309,27 +298,56 @@ function BoardView({ items, onEdit, onStatus, cadStatus, onDelete, compact }) {
   const onDragOver = (e)=>{ e.preventDefault(); e.currentTarget.classList.add('dragover') }
   const onDragLeave = (e)=>{ e.currentTarget.classList.remove('dragover') }
   const statusColorFor = (s)=> statusColor(s, {})
+  const labelClass = (s)=>{
+    const v = String(s||'').toLowerCase()
+    if (v.includes('ads')) return 'label-ads'
+    if (v.includes('motion') || v.includes('vídeo') || v.includes('video')) return 'label-motion'
+    if (v.includes('esporte')) return 'label-esporte'
+    if (v.includes('post')) return 'label-post'
+    if (v.includes('story')) return 'label-story'
+    return 'label-default'
+  }
   return (
     <div className="board">
       {mondayCols.map(col => (
         <div key={col.name} className="column">
-          <div className="col-head">{col.name}</div>
+          <div className="col-head">
+            <div>{col.name}</div>
+            <button className="action-btn" type="button">⋯</button>
+          </div>
           <div className="col-body dropzone" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={e=> onDropCol(e, col)}>
             {items.filter(it=> isInCol(it, col)).map(it => (
-              <div key={it.id} className="card kanban-card" draggable onDragStart={e=> e.dataTransfer.setData('id', String(it.id))} onClick={()=>onEdit(it)}>
+              <div key={it.id} className="card kanban-card" draggable onDragStart={e=>{ e.dataTransfer.setData('id', String(it.id)); e.currentTarget.classList.add('dragging') }} onDragEnd={e=> e.currentTarget.classList.remove('dragging')} onClick={()=>onEdit(it)}>
                 <div className="kanban-avatar">{String(it.designer||'').slice(0,2).toUpperCase()}</div>
                 <div>
+                  <div className="label-row">
+                    {[it.tipoMidia, it.plataforma].filter(Boolean).map(lbl=> (
+                      <span key={lbl} className={`label-pill ${labelClass(lbl)}`}>{lbl}</span>
+                    ))}
+                  </div>
                   <div className="card-top">
                     <div className="title">{it.titulo}</div>
+                    <button className="action-btn" type="button">⋯</button>
                   </div>
+                  {it.prazo && (
+                    <div className="deadline-pill">🕒 {new Date(it.prazo).toLocaleDateString('pt-BR', { day:'2-digit', month:'short' })}</div>
+                  )}
                   <div className="meta">{it.tipoMidia}{it.plataforma?` • ${it.plataforma}`:''}</div>
                   <div style={{display:'flex',alignItems:'center',gap:8}}>
                     <span className="pill" style={{borderColor:statusColorFor(it.status), color:statusColorFor(it.status)}}>{statusLabel(it.status)}</span>
-                    {it.prazo && <span className="due">⏰ {it.prazo}</span>}
+                  </div>
+                  {(()=>{ const a = it.arquivos||[]; const f = a[0]; const src = typeof f==='string' ? f : (f&&f.url?f.url:null); return src ? (<img className="card-preview" src={src} alt="preview" />) : null })()}
+                  <div className="card-footer">
+                    <div className="foot-item">📎 {(it.arquivos||[]).length||0}</div>
+                    <div className="foot-item">💬 {it.revisoes||0}</div>
+                    <div className="foot-item">☑ 0</div>
+                    <div className="foot-spacer" />
+                    <div className="kanban-avatar small">{String(it.designer||'').slice(0,1).toUpperCase()}</div>
                   </div>
                 </div>
               </div>
             ))}
+            <button type="button" className="add-card"><span className="icon">＋</span><span>Adicionar um cartão</span></button>
           </div>
         </div>
       ))}
@@ -600,12 +618,12 @@ export default function App() {
       <div className="content">
         <div className="app">
           <Header onNew={onNew} view={view} setView={setView} showNew={route==='demandas'} />
-          {route!=='config' && (
+          {route==='demandas' && (
             <FilterBar filtros={filtros} setFiltros={setFiltros} designers={designers} />
           )}
           {route==='demandas' && (
             <div className="topnav">
-              <button className="icon" onClick={()=> setCompact(c=>!c)}>{compact?'Expandido':'Compacto'}</button>
+              <ViewButtonsInner view={view} setView={setView} />
             </div>
           )}
           {route==='demandas' && view==='table' && <TableView items={itemsSorted.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsSorted.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsSorted.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsSorted.length)} total={itemsSorted.length} compact={compact} />}
@@ -635,7 +653,7 @@ export default function App() {
             <CadastrosView cadStatus={cadStatus} setCadStatus={setCadStatus} cadTipos={cadTipos} setCadTipos={setCadTipos} cadDesigners={cadDesigners} setCadDesigners={setCadDesigners} cadPlataformas={cadPlataformas} setCadPlataformas={setCadPlataformas} cadStatusColors={cadStatusColors} setCadStatusColors={setCadStatusColors} />
           )}
           {route==='relatorios' && (
-            <DashboardView demandas={demandas} items={items} designers={designers} setView={setView} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} compact={compact} calRef={calRef} setCalRef={setCalRef} />
+            <ReportsView demandas={demandas} items={items} designers={designers} filtros={filtros} setFiltros={setFiltros} />
           )}
           
         </div>
@@ -660,189 +678,6 @@ function Sidebar({ route, setRoute }) {
 
  
 
-function ReportsView({ demandas, designers, setRoute, setFiltros, setView }) {
-  const pad = n => String(n).padStart(2,'0')
-  const toYMD = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`
-  const toYM = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}`
-  const isoWeek = d => {
-    const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
-    const dayNum = date.getUTCDay() || 7
-    date.setUTCDate(date.getUTCDate() + 4 - dayNum)
-    const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1))
-    const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1)/7)
-    return `${date.getUTCFullYear()}-W${pad(weekNo)}`
-  }
-  const norm = s => (s||'').trim()
-  const designersKeys = Array.from(new Set(designers.filter(Boolean).map(norm))).sort()
-  const hoje = new Date()
-  const hojeStr = toYMD(hoje)
-  const semanaKey = isoWeek(hoje)
-  const mesKey = toYM(hoje)
-  const mesPassadoKey = toYM(new Date(hoje.getFullYear(), hoje.getMonth()-1, 1))
-  const countBy = (designerKey, pred) => demandas.filter(x=> norm(x.designer)===designerKey && pred(x)).length
-  const rows = [
-    { label: 'Criados Hoje', get: d => countBy(d, x=> x.dataCriacao===hojeStr) },
-    { label: 'Criados na Semana', get: d => countBy(d, x=> isoWeek(new Date(x.dataCriacao))===semanaKey) },
-    { label: 'Criados no Mês', get: d => countBy(d, x=> toYM(new Date(x.dataCriacao))===mesKey) },
-    { label: 'Total Criado Mês Passado', get: d => countBy(d, x=> toYM(new Date(x.dataCriacao))===mesPassadoKey) },
-    { label: 'Total Criado', get: d => countBy(d, _=> true) },
-  ]
-  const countDoneBy = (designerKey, pred) => demandas.filter(x=> norm(x.designer)===designerKey && x.status==='Concluída' && pred(x)).length
-  const rowsDone = [
-    { label: 'Total Concluído', get: d => countDoneBy(d, _=> true) },
-  ]
-  const tipos = useMemo(()=> Array.from(new Set(demandas.map(x=> x.tipoMidia).filter(Boolean))).sort(), [demandas])
-  const countTipoConcluida = (tipo) => demandas.filter(x=> x.tipoMidia===tipo && x.status==='Concluída').length
-  const [period, setPeriod] = useState('today')
-  const [customIni, setCustomIni] = useState('')
-  const [customFim, setCustomFim] = useState('')
-  const startEnd = useMemo(()=>{
-    const d = new Date()
-    const startOfMonth = new Date(d.getFullYear(), d.getMonth(), 1)
-    const endOfMonth = new Date(d.getFullYear(), d.getMonth()+1, 0)
-    const startOfLastMonth = new Date(d.getFullYear(), d.getMonth()-1, 1)
-    const endOfLastMonth = new Date(d.getFullYear(), d.getMonth(), 0)
-    const startOfISOWeek = (ref) => { const r = new Date(ref); const day = r.getDay()||7; r.setDate(r.getDate() - (day-1)); return new Date(r.getFullYear(), r.getMonth(), r.getDate()) }
-    const endOfISOWeek = (ref) => { const s = startOfISOWeek(ref); const e = new Date(s); e.setDate(e.getDate()+6); return e }
-    if (period==='today') return { ini: toYMD(d), fim: toYMD(d) }
-    if (period==='week') { const s = startOfISOWeek(d); const e = endOfISOWeek(d); return { ini: toYMD(s), fim: toYMD(e) } }
-    if (period==='month') return { ini: toYMD(startOfMonth), fim: toYMD(endOfMonth) }
-    if (period==='last_month') return { ini: toYMD(startOfLastMonth), fim: toYMD(endOfLastMonth) }
-    if (period==='last_30') { const e = d; const s = new Date(d); s.setDate(s.getDate()-29); return { ini: toYMD(s), fim: toYMD(e) } }
-    if (period==='custom' && customIni && customFim) return { ini: customIni, fim: customFim }
-    return { ini: toYMD(startOfMonth), fim: toYMD(endOfMonth) }
-  },[period, customIni, customFim])
-  const prevStartEnd = useMemo(()=>{
-    const parse = (s)=>{ const [y,m,dd]=s.split('-').map(Number); return new Date(y,m-1,dd) }
-    const iniD = parse(startEnd.ini); const fimD = parse(startEnd.fim)
-    const days = Math.round((fimD - iniD)/86400000)+1
-    const shift = (ref, n)=>{ const r = new Date(ref); r.setDate(r.getDate()-n); return r }
-    const iniPrev = shift(iniD, days)
-    const fimPrev = shift(fimD, days)
-    return { ini: toYMD(iniPrev), fim: toYMD(fimPrev) }
-  },[startEnd])
-  const inRange = (ymd, r) => ymd >= r.ini && ymd <= r.fim
-  const totalCriadosPeriodo = demandas.filter(x=> inRange(x.dataCriacao, startEnd)).length
-  const totalConcluidosPeriodo = demandas.filter(x=> x.status==='Concluída' && inRange(x.dataCriacao, startEnd)).length
-  const prevCriados = demandas.filter(x=> inRange(x.dataCriacao, prevStartEnd)).length
-  const prevConcluidos = demandas.filter(x=> x.status==='Concluída' && inRange(x.dataCriacao, prevStartEnd)).length
-  const varCriados = prevCriados ? Math.round(((totalCriadosPeriodo - prevCriados)/prevCriados)*100) : (totalCriadosPeriodo?100:0)
-  const varConcluidos = prevConcluidos ? Math.round(((totalConcluidosPeriodo - prevConcluidos)/prevConcluidos)*100) : (totalConcluidosPeriodo?100:0)
-  const weekDays = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb']
-  const weekdayCounts = useMemo(()=>{
-    const parse = (s)=>{ const [y,m,dd]=s.split('-').map(Number); return new Date(y,m-1,dd) }
-    const map = Array(7).fill(0)
-    const mapDone = Array(7).fill(0)
-    demandas.forEach(x=>{
-      const d = parse(x.dataCriacao)
-      const ymd = toYMD(d)
-      if (inRange(ymd, startEnd)) { const wd = d.getDay(); map[wd]++; if (x.status==='Concluída') mapDone[wd]++ }
-    })
-    return { created: map, done: mapDone }
-  },[demandas, startEnd])
-  const [designerSel, setDesignerSel] = useState('')
-  const matchDesigner = (x) => !designerSel || norm(x.designer)===designerSel
-  return (
-    <div className="reports">
-      <div className="panel">
-        <div className="reports-toolbar">
-          <div>Período</div>
-          <select value={period} onChange={e=> setPeriod(e.target.value)}>
-            <option value="today">Hoje</option>
-            <option value="week">Esta semana</option>
-            <option value="month">Este mês</option>
-            <option value="last_month">Mês passado</option>
-            <option value="last_30">Últimos 30 dias</option>
-            <option value="custom">Personalizado</option>
-          </select>
-          {period==='custom' && (
-            <>
-              <input type="date" value={customIni} onChange={e=>setCustomIni(e.target.value)} />
-              <span>–</span>
-              <input type="date" value={customFim} onChange={e=>setCustomFim(e.target.value)} />
-            </>
-          )}
-          <div>Designer</div>
-          <select value={designerSel} onChange={e=> setDesignerSel(e.target.value)}>
-            <option value="">Todos</option>
-            {designersKeys.map(d=> <option key={d} value={d}>{d}</option>)}
-          </select>
-        </div>
-        <div className="metrics-grid">
-          <div className="metric-card">
-            <div className="metric-title">📅 Criados no período</div>
-            <div className="metric-value"><Counter value={demandas.filter(x=> matchDesigner(x) && inRange(x.dataCriacao, startEnd)).length} /></div>
-            <div className="today-meta">{varCriados>=0?'⬆':'⬇'} {Math.abs(varCriados)}% vs período anterior</div>
-            <Sparkline series={(()=>{ const parse=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(a,b-1,c)}; const ini=parse(startEnd.ini); const fim=parse(startEnd.fim); const days=Math.max(1,Math.round((fim-ini)/86400000)+1); const arr=[]; for(let i=0;i<days;i++){ const d=new Date(ini); d.setDate(ini.getDate()+i); const ymd=toYMD(d); arr.push(demandas.filter(x=> matchDesigner(x) && inRange(x.dataCriacao,{ini:ymd,fim:ymd})).length) } return arr })()} color="#BCD200" />
-          </div>
-          <div className="metric-card">
-            <div className="metric-title">🏁 Concluídos no período</div>
-            <div className="metric-value"><Counter value={demandas.filter(x=> matchDesigner(x) && x.status==='Concluída' && inRange(x.dataCriacao, startEnd)).length} /></div>
-            <div className="today-meta">{varConcluidos>=0?'⬆':'⬇'} {Math.abs(varConcluidos)}% vs período anterior</div>
-            <Sparkline series={(()=>{ const parse=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(a,b-1,c)}; const ini=parse(startEnd.ini); const fim=parse(startEnd.fim); const days=Math.max(1,Math.round((fim-ini)/86400000)+1); const arr=[]; for(let i=0;i<days;i++){ const d=new Date(ini); d.setDate(ini.getDate()+i); const ymd=toYMD(d); arr.push(demandas.filter(x=> matchDesigner(x) && x.status==='Concluída' && inRange(x.dataCriacao,{ini:ymd,fim:ymd})).length) } return arr })()} color="#9ba7b4" />
-          </div>
-          <div className="metric-card">
-            <div className="metric-title">Pendentes (Aberta)</div>
-            <div className="metric-value"><Counter value={demandas.filter(x=> matchDesigner(x) && x.status==='Aberta' && inRange(x.dataCriacao, startEnd)).length} /></div>
-            <Sparkline series={(()=>{ const parse=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(a,b-1,c)}; const ini=parse(startEnd.ini); const fim=parse(startEnd.fim); const days=Math.max(1,Math.round((fim-ini)/86400000)+1); const arr=[]; for(let i=0;i<days;i++){ const d=new Date(ini); d.setDate(ini.getDate()+i); const ymd=toYMD(d); arr.push(demandas.filter(x=> matchDesigner(x) && x.status==='Aberta' && inRange(x.dataCriacao,{ini:ymd,fim:ymd})).length) } return arr })()} color="#BCD200" />
-          </div>
-          <div className="metric-card">
-            <div className="metric-title">Em produção</div>
-            <div className="metric-value"><Counter value={demandas.filter(x=> matchDesigner(x) && x.status==='Em Progresso' && inRange(x.dataCriacao, startEnd)).length} /></div>
-            <Sparkline series={(()=>{ const parse=s=>{const[a,b,c]=s.split('-').map(Number);return new Date(a,b-1,c)}; const ini=parse(startEnd.ini); const fim=parse(startEnd.fim); const days=Math.max(1,Math.round((fim-ini)/86400000)+1); const arr=[]; for(let i=0;i<days;i++){ const d=new Date(ini); d.setDate(ini.getDate()+i); const ymd=toYMD(d); arr.push(demandas.filter(x=> matchDesigner(x) && x.status==='Em Progresso' && inRange(x.dataCriacao,{ini:ymd,fim:ymd})).length) } return arr })()} color="#BCD200" />
-          </div>
-        </div>
-        <div className="reports-grid">
-        <div className="report-card">
-          <div className="report-title">📊 Criados por dia da semana</div>
-          <div className="chart">
-            {weekDays.map((w,i)=>{
-              const maxv = Math.max(...weekDays.map((_,idx)=> demandas.filter(x=> matchDesigner(x) && inRange(x.dataCriacao, startEnd) && (new Date(x.dataCriacao).getDay()===idx)).length), 1)
-              const created = demandas.filter(x=> matchDesigner(x) && inRange(x.dataCriacao, startEnd) && (new Date(x.dataCriacao).getDay()===i)).length
-              const cw = Math.round((created/maxv)*100)
-              return (
-                <div key={w} className="chart-row">
-                  <div className="chart-label">{w}</div>
-                  <div className="chart-bar"><div className="chart-fill" style={{ width: cw+'%', background: 'var(--accent)' }}></div><div className="chart-value">{created}</div></div>
-                </div>
-              )
-            })}
-          </div>
-          <button className="icon" onClick={()=>{ setFiltros(prev=> ({ ...prev, cIni: startEnd.ini, cFim: startEnd.fim, designer: designerSel||'' })); setRoute('demandas'); setView('table') }}>🔍 Ver detalhes</button>
-        </div>
-        <div className="report-card">
-          <div className="report-title">📈 Concluídos por dia da semana</div>
-          <div className="chart">
-            {weekDays.map((w,i)=>{
-              const maxv = Math.max(...weekDays.map((_,idx)=> demandas.filter(x=> matchDesigner(x) && x.status==='Concluída' && inRange(x.dataCriacao, startEnd) && (new Date(x.dataCriacao).getDay()===idx)).length), 1)
-              const done = demandas.filter(x=> matchDesigner(x) && x.status==='Concluída' && inRange(x.dataCriacao, startEnd) && (new Date(x.dataCriacao).getDay()===i)).length
-              const dw = Math.round((done/maxv)*100)
-              return (
-                <div key={w} className="chart-row">
-                  <div className="chart-label">{w}</div>
-                  <div className="chart-bar"><div className="chart-fill" style={{ width: dw+'%', background: '#bdbdbd' }}></div><div className="chart-value">{done}</div></div>
-                </div>
-              )
-            })}
-          </div>
-          <button className="icon" onClick={()=>{ setFiltros(prev=> ({ ...prev, cIni: startEnd.ini, cFim: startEnd.fim, designer: designerSel||'' })); setRoute('demandas'); setView('table') }}>🔍 Ver detalhes</button>
-        </div>
-        <div className="report-card">
-          <div className="report-title">🔥 Alertas importantes</div>
-          <div className="today-list">
-            <div className="today-item alert-red">⚠ {demandas.filter(x=> matchDesigner(x) && (x.prazo||'') && x.status!=='Concluída' && x.prazo < toYMD(new Date())).length} demandas atrasadas</div>
-            <div className="today-item alert-yellow">⏳ {demandas.filter(x=> matchDesigner(x) && (x.prazo||'') && x.status!=='Concluída' && x.prazo===toYMD(new Date(new Date().setDate(new Date().getDate()+1)))).length} vencem amanhã</div>
-            <div className="today-item alert-orange">❗ {demandas.filter(x=> matchDesigner(x) && !norm(x.designer)).length} sem designer atribuído</div>
-            <div className="today-item alert-purple">🔁 {demandas.filter(x=> matchDesigner(x) && (x.revisoes||0) >= 3).length} com mais de 2 revisões</div>
-            <div className="today-item alert-grey">📌 {demandas.filter(x=> matchDesigner(x) && !(x.prazo||'')).length} sem prazo definido</div>
-          </div>
-        </div>
-        </div>
-        
-      </div>
-    </div>
-  )
-}
 
 function ConfigView({ themeVars, setThemeVars }) {
   const [localVars, setLocalVars] = useState(themeVars||{})
@@ -971,13 +806,25 @@ function FilterBar({ filtros, setFiltros, designers }) {
     <div className="filterbar">
       <div className="seg">
         {list.map(lbl=> (
-          <button key={lbl} className={`btn-md ${period===keyOf(lbl)?'active':''}`} onClick={()=> setPeriod(keyOf(lbl))}>{lbl}</button>
+          <button key={lbl} className={`btn-md ${period===keyOf(lbl)?'active':''}`} onClick={()=> setPeriod(keyOf(lbl))}>
+            <span className="icon">🗓</span><span>{lbl}</span>
+          </button>
         ))}
       </div>
       <div className="seg">
         {designersKeys.map(d=> (
-          <button key={d} className={`btn-md ${((filtros.designer||'')===d || (d==='Todos' && !filtros.designer))?'active':''}`} onClick={()=> setDesigner(d)}>{d}</button>
+          <button key={d} className={`btn-md ${((filtros.designer||'')===d || (d==='Todos' && !filtros.designer))?'active':''}`} onClick={()=> setDesigner(d)}>
+            <span className="icon">👤</span><span>{d}</span>
+          </button>
         ))}
+      </div>
+      <div className="seg">
+        <div className="date-pill">
+          <span className="icon">🗓</span>
+          <input type="date" value={filtros.cIni||''} onChange={e=> setFiltros(prev=> ({ ...prev, cIni: e.target.value }))} />
+          <span style={{color:'var(--muted)'}}>—</span>
+          <input type="date" value={filtros.cFim||''} onChange={e=> setFiltros(prev=> ({ ...prev, cFim: e.target.value }))} />
+        </div>
       </div>
     </div>
   )
@@ -1012,154 +859,307 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
   const [chartTab, setChartTab] = useState('barras')
   return (
     <div className="dashboard">
-      <div className="widgets">
-        <div className="widget">
-          <div className="widget-title">KPIs principais</div>
-          <div className="widget-subtitle">Indicadores gerais do período selecionado</div>
-          <div className="kpi-grid">
-            {kpi.map(it=> (
-              <div key={it.title} className="kpi fade-in">
-                <div className="widget-title">{it.icon} {it.title}</div>
-                <div className="kpi-value"><Counter value={it.value} /></div>
-                <div className="kpi-trend">↑ 12% vs período anterior</div>
+          <div className="widgets">
+            <div className="widget">
+              <div className="widget-title">KPIs principais</div>
+              <div className="widget-subtitle">Indicadores gerais do período selecionado</div>
+              <div className="kpi-grid">
+                {kpi.map(it=> (
+                  <div key={it.title} className="kpi fade-in">
+                    <div className="widget-title">{it.icon} {it.title}</div>
+                    <div className="kpi-value"><Counter value={it.value} /></div>
+                    <div className="kpi-trend">{pct(it.value)}% das demandas no período</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+    </div>
+  )
+}
+
+function ReportsView({ demandas, items, designers, filtros, setFiltros }) {
+  const periodLabel = ['Hoje','Semana','Mês','Mês passado']
+  const keyOf = s => s==='Hoje'?'today': s==='Semana'?'week': s==='Mês'?'month':'lastmonth'
+  const [period, setPeriod] = useState('month')
+  useEffect(()=>{
+    const d = new Date()
+    const toYMD = x => { const p = n=>String(n).padStart(2,'0'); return `${x.getFullYear()}-${p(x.getMonth()+1)}-${p(x.getDate())}` }
+    const startOfISOWeek = (ref) => { const r = new Date(ref); const day = r.getDay()||7; r.setDate(r.getDate() - (day-1)); return new Date(r.getFullYear(), r.getMonth(), r.getDate()) }
+    const endOfISOWeek = (ref) => { const s = startOfISOWeek(ref); const e = new Date(s); e.setDate(e.getDate()+6); return e }
+    const startOfMonth = new Date(d.getFullYear(), d.getMonth(), 1)
+    const endOfMonth = new Date(d.getFullYear(), d.getMonth()+1, 0)
+    const startOfLastMonth = new Date(d.getFullYear(), d.getMonth()-1, 1)
+    const endOfLastMonth = new Date(d.getFullYear(), d.getMonth(), 0)
+    if (period==='today') setFiltros(prev=>({ ...prev, cIni: toYMD(d), cFim: toYMD(d) }))
+    if (period==='week') { const s=startOfISOWeek(d), e=endOfISOWeek(d); setFiltros(prev=>({ ...prev, cIni: toYMD(s), cFim: toYMD(e) })) }
+    if (period==='month') setFiltros(prev=>({ ...prev, cIni: toYMD(startOfMonth), cFim: toYMD(endOfMonth) }))
+    if (period==='lastmonth') setFiltros(prev=>({ ...prev, cIni: toYMD(startOfLastMonth), cFim: toYMD(endOfLastMonth) }))
+  },[period])
+  const designersKeys = ['Todos', ...designers]
+  const setDesigner = (v) => setFiltros(prev=> ({ ...prev, designer: v==='Todos'?'':v }))
+  const daysInPeriod = (()=>{
+    const toD = s=>{ if(!s) return null; const [y,m,dd]=s.split('-').map(Number); return new Date(y,m-1,dd) }
+    const s = toD(filtros.cIni), e = toD(filtros.cFim)
+    if (!s || !e) return 1
+    return Math.max(1, Math.round((e - s)/86400000) + 1)
+  })()
+  const concluidos = items.filter(x=> x.status==='Concluída')
+  const pendentes = items.filter(x=> x.status==='Aberta')
+  const emProducao = items.filter(x=> x.status==='Em Progresso')
+  const revisoesTot = demandas.reduce((acc,x)=> acc + (x.revisoes||0), 0)
+  const produtividadeMedia = concluidos.length / daysInPeriod
+  const byDesigner = (arr) => {
+    const map = new Map()
+    arr.forEach(x=> map.set(x.designer||'—', (map.get(x.designer||'—')||0)+1))
+    return Array.from(map.entries()).map(([designer,qty])=>({designer,qty}))
+  }
+  const conclPorDesigner = byDesigner(concluidos)
+  const criadasPorDesigner = byDesigner(items)
+  const tempoEntregaStats = (()=>{
+    const diffDays = (a,b)=>{ const toD = s=>{ const [y,m,dd]=s.split('-').map(Number); return new Date(y,m-1,dd) }; if(!a||!b) return null; return Math.max(0, Math.round((toD(b)-toD(a))/86400000)) }
+    const per = {}
+    demandas.forEach(x=>{
+      if (x.dataConclusao) {
+        const d = x.designer||'—'
+        const t = diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)
+        if (t!=null) { const cur = per[d]||{ cnt:0, sum:0, min:9999, max:0 }; per[d]={ cnt:cur.cnt+1, sum:cur.sum+t, min:Math.min(cur.min,t), max:Math.max(cur.max,t) } }
+      }
+    })
+    return Object.entries(per).map(([designer,v])=> ({ designer, media: (v.sum/v.cnt)||0, min:v.min===9999?0:v.min, max:v.max }))
+  })()
+  const slaStats = (()=>{
+    const per = {}
+    demandas.forEach(x=>{
+      if (x.prazo && x.dataConclusao) {
+        const d = x.designer||'—'
+        const ok = x.dataConclusao <= x.prazo
+        const cur = per[d]||{ ok:0, total:0 }
+        per[d] = { ok: cur.ok + (ok?1:0), total: cur.total + 1 }
+      }
+    })
+    return Object.entries(per).map(([designer,v])=> ({ designer, pct: Math.round(((v.ok/(v.total||1))*100)), ok:v.ok, total:v.total }))
+  })()
+  const revisoesStats = (()=>{
+    const per = {}
+    demandas.forEach(x=>{
+      const d = x.designer||'—'
+      const r = x.revisoes||0
+      const cur = per[d]||{ rTot:0, cnt:0 }
+      per[d] = { rTot: cur.rTot + r, cnt: cur.cnt + 1 }
+    })
+    return Object.entries(per).map(([designer,v])=> ({ designer, total:v.rTot, porPeca: +(v.rTot/(v.cnt||1)).toFixed(2), percRetrab: Math.round(100 * ((v.rTot>0 ? 1 : 0))) }))
+  })()
+  const tiposDist = (()=>{
+    const per = {}
+    items.forEach(x=>{ const t=x.tipoMidia||'Outro'; per[t]=(per[t]||0)+1 })
+    const total = items.length||1
+    return Object.entries(per).map(([tipo,q])=> ({ tipo, q, pct: Math.round((q/total)*100) }))
+  })()
+  const workload = (()=>{
+    const capacity = 4
+    const per = {}
+    concluidos.forEach(x=>{ const d=x.designer||'—'; per[d]=(per[d]||0)+1 })
+    return Object.entries(per).map(([designer,q])=> ({ designer, ideal: capacity*daysInPeriod, real:q, status: q>capacity*daysInPeriod? 'Acima' : (q<capacity*daysInPeriod? 'Abaixo' : 'Dentro') }))
+  })()
+  const timeline = (()=>{
+    const d = new Date(); const monthStart = new Date(d.getFullYear(), d.getMonth(), 1); const days = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate()
+    const toIdx = s=>{ if(!s) return null; const [y,m,dd]=s.split('-').map(Number); const dt=new Date(y,m-1,dd); if(dt.getMonth()!==d.getMonth()||dt.getFullYear()!==d.getFullYear()) return null; return dt.getDate()-1 }
+    const per = {}
+    demandas.forEach(x=>{ const di = toIdx(x.dataCriacao||x.dataSolicitacao); if (di!=null) { const dname=x.designer||'—'; const arr = per[dname]||Array(days).fill(0); arr[di]++; per[dname]=arr } })
+    return per
+  })()
+  const heatmap = (()=>{
+    const byDayWeek = Array.from({length:7},()=>Array(6).fill(0))
+    items.forEach(x=>{ const toD=s=>{ if(!s) return null; const [y,m,dd]=s.split('-').map(Number); return new Date(y,m-1,dd) }; const dt = toD(x.dataCriacao||x.dataSolicitacao); if(!dt) return; const day = dt.getDay(); const week = Math.floor((dt.getDate()-1)/7); byDayWeek[day][week]++ })
+    return byDayWeek
+  })()
+  const ranking = (()=>{
+    const prod = conclPorDesigner.reduce((m,{designer,qty})=> (m[designer]=qty,m), {})
+    const slaM = slaStats.reduce((m,{designer,pct})=> (m[designer]=pct,m), {})
+    const tempoM = tempoEntregaStats.reduce((m,{designer,media})=> (m[designer]=media,m), {})
+    const revM = revisoesStats.reduce((m,{designer,porPeca})=> (m[designer]=porPeca,m), {})
+    const names = Array.from(new Set([...Object.keys(prod), ...Object.keys(slaM), ...Object.keys(tempoM), ...Object.keys(revM)])).filter(Boolean)
+    const norm = (val, min, max) => { if(max===min) return 1; return Math.max(0, Math.min(1, (val-min)/(max-min))) }
+    const maxProd = Math.max(...Object.values(prod||{_:-1}),0), minProd = Math.min(...Object.values(prod||{_:-1}),0)
+    const maxSla = 100, minSla = 0
+    const maxTempo = Math.max(...Object.values(tempoM||{_:-1}),0), minTempo = Math.min(...Object.values(tempoM||{_:-1}),0)
+    const maxRev = Math.max(...Object.values(revM||{_:-1}),0), minRev = Math.min(...Object.values(revM||{_:-1}),0)
+    const list = names.map(n=>{
+      const sProd = norm(prod[n]||0, minProd, maxProd)
+      const sSla = norm(slaM[n]||0, minSla, maxSla)
+      const sTempoInv = 1 - norm(tempoM[n]||0, minTempo, maxTempo)
+      const sRevInv = 1 - norm(revM[n]||0, minRev, maxRev)
+      const score = Math.round(((sProd*0.4)+(sSla*0.3)+(sTempoInv*0.2)+(sRevInv*0.1))*100)
+      return { designer:n, score }
+    }).sort((a,b)=> b.score - a.score)
+    return list
+  })()
+  const alerts = [
+    { icon:'⚠', text:'Designer com maior carga no período', val: conclPorDesigner.sort((a,b)=> b.qty-a.qty)[0]?.designer||'—' },
+    { icon:'⏳', text:'Designer com mais tarefas próximas do prazo', val: (()=>{ const near = demandas.filter(x=> x.prazo && x.status!=='Concluída'); const per={}; near.forEach(x=> per[x.designer||'—']=(per[x.designer||'—']||0)+1); return Object.entries(per).sort((a,b)=> b[1]-a[1])[0]?.[0]||'—' })() },
+    { icon:'🔁', text:'Designer com mais revisões', val: revisoesStats.sort((a,b)=> b.total-a.total)[0]?.designer||'—' },
+    { icon:'💤', text:'Designer com menor atividade', val: conclPorDesigner.sort((a,b)=> a.qty-b.qty)[0]?.designer||'—' },
+    { icon:'🚨', text:'Alertas de atraso repetidos', val: demandas.filter(x=> x.prazo && x.status!=='Concluída' && x.prazo < hojeISO()).length }
+  ]
+  return (
+    <div className="reports">
+      <div className="reports-toolbar">
+        <div className="chips">
+          {periodLabel.map(lbl=> (
+            <button key={lbl} className={`btn-md ${period===keyOf(lbl)?'active':''}`} onClick={()=> setPeriod(keyOf(lbl))}><span className="icon">🗓</span><span>{lbl}</span></button>
+          ))}
+          <div className="date-pill">
+            <span className="icon">🗓</span>
+            <input type="date" value={filtros.cIni||''} onChange={e=> setFiltros(prev=> ({ ...prev, cIni: e.target.value }))} />
+            <span style={{color:'var(--muted)'}}>—</span>
+            <input type="date" value={filtros.cFim||''} onChange={e=> setFiltros(prev=> ({ ...prev, cFim: e.target.value }))} />
+          </div>
+        </div>
+        <div className="chips">
+          {designersKeys.map(d=> (
+            <button key={d} className={`btn-md ${((filtros.designer||'')===d || (d==='Todos' && !filtros.designer))?'active':''}`} onClick={()=> setDesigner(d)}><span className="icon">👤</span><span>{d}</span></button>
+          ))}
+        </div>
+      </div>
+      <div className="metrics-grid">
+        {[
+          { icon:'🏁', label:'Concluídas no período', val: concluidos.length },
+          { icon:'📅', label:'Criadas no período', val: items.length },
+          { icon:'📌', label:'Pendentes', val: pendentes.length },
+          { icon:'🟡', label:'Em produção', val: emProducao.length },
+          { icon:'🔁', label:'Revisões realizadas', val: revisoesTot },
+          { icon:'⚡', label:'Produtividade média (peças/dia)', val: +produtividadeMedia.toFixed(1) },
+        ].map(m=> (
+          <div key={m.label} className="metric-card">
+            <div className="metric-title">{m.icon} {m.label}</div>
+            <div className="metric-value">{m.val}</div>
+            <Sparkline series={[m.val/2, m.val*0.8, m.val]} color="#4DA3FF" />
+          </div>
+        ))}
+      </div>
+      <div className="reports-grid">
+        <div className="report-card">
+          <div className="report-title">Produtividade por designer</div>
+          {conclPorDesigner.map(({designer,qty})=> (
+            <div key={designer} className="chart-row"><div className="chart-label">{designer}</div><div className="chart-bar"><div className="chart-fill" style={{width:`${Math.round(100*qty/Math.max(1,Math.max(...conclPorDesigner.map(x=>x.qty))))}%`, background:'#4DA3FF'}} /><div className="chart-value">{qty}</div></div></div>
+          ))}
+          <div className="section-divider" />
+          <table>
+            <thead><tr><th>Designer</th><th>Criadas</th><th>Concluídas</th><th>% Conclusão</th></tr></thead>
+            <tbody>
+              {designers.map(d=>{ const cr = (criadasPorDesigner.find(x=>x.designer===d)?.qty)||0; const co = (conclPorDesigner.find(x=>x.designer===d)?.qty)||0; const pc = Math.round(100*(co/Math.max(1,cr))); return (<tr key={d}><td>{d}</td><td>{cr}</td><td>{co}</td><td>{pc}%</td></tr>) })}
+            </tbody>
+          </table>
+        </div>
+        <div className="report-card">
+          <div className="report-title">Tempo médio de entrega (por designer)</div>
+          {tempoEntregaStats.map(({designer,media})=> (
+            <div key={designer} className="chart-row"><div className="chart-label">{designer}</div><div className="chart-bar"><div className="chart-fill" style={{width:`${Math.round(100*media/Math.max(1,Math.max(...tempoEntregaStats.map(x=>x.media))))}%`, background:'#A66BFF'}} /><div className="chart-value">{media.toFixed(1)}d</div></div></div>
+          ))}
+          <div className="section-divider" />
+          <table>
+            <thead><tr><th>Designer</th><th>Tempo médio</th><th>Tempo mín</th><th>Tempo máx</th></tr></thead>
+            <tbody>
+              {tempoEntregaStats.map(r=> (<tr key={r.designer}><td>{r.designer}</td><td>{r.media.toFixed(1)}d</td><td>{r.min}d</td><td>{r.max}d</td></tr>))}
+            </tbody>
+          </table>
+        </div>
+        <div className="report-card">
+          <div className="report-title">SLA de entrega</div>
+          {(()=>{ const ok = slaStats.reduce((a,x)=> a+x.ok,0); const total = slaStats.reduce((a,x)=> a+x.total,0); const pct = Math.round(100*(ok/Math.max(1,total))); const r=40; const c=2*Math.PI*r; const off = c*(1 - pct/100); return (
+            <svg width="160" height="120"><g transform="translate(20,20)"><circle cx="60" cy="40" r={r} stroke="#222" strokeWidth="10" fill="none" /><circle cx="60" cy="40" r={r} stroke="#00C58E" strokeWidth="10" fill="none" strokeDasharray={`${c} ${c}`} strokeDashoffset={off} /><text x="60" y="46" textAnchor="middle" fill="#fff">{pct}%</text></g></svg>
+          ) })()}
+          <div className="section-divider" />
+          <table>
+            <thead><tr><th>Designer</th><th>SLA%</th><th>Dentro</th><th>Fora</th></tr></thead>
+            <tbody>
+              {slaStats.map(r=> (<tr key={r.designer}><td>{r.designer}</td><td style={{color: r.pct>=90?'#BCD200': r.pct>=70?'#FFE55C':'#FF5E5E'}}>{r.pct}%</td><td>{r.ok}</td><td>{r.total-r.ok}</td></tr>))}
+            </tbody>
+          </table>
+        </div>
+        <div className="report-card">
+          <div className="report-title">Revisões / retrabalho</div>
+          {revisoesStats.map(({designer,total})=> (
+            <div key={designer} className="chart-row"><div className="chart-label">{designer}</div><div className="chart-bar"><div className="chart-fill" style={{width:`${Math.round(100*total/Math.max(1,Math.max(...revisoesStats.map(x=>x.total))))}%`, background:'#FF6A88'}} /><div className="chart-value">{total}</div></div></div>
+          ))}
+          <div className="section-divider" />
+          <table>
+            <thead><tr><th>Designer</th><th>Revisões totais</th><th>Revisões/peça</th><th>% retrabalho</th></tr></thead>
+            <tbody>
+              {revisoesStats.map(r=> (<tr key={r.designer}><td>{r.designer}</td><td>{r.total}</td><td>{r.porPeca}</td><td>{r.percRetrab}%</td></tr>))}
+            </tbody>
+          </table>
+        </div>
+        <div className="report-card">
+          <div className="report-title">Tipos de peça</div>
+          <div className="chips">
+            {tiposDist.map(t=> (<span key={t.tipo} className="chip">{t.tipo}: {t.q} ({t.pct}%)</span>))}
+          </div>
+          <div className="section-divider" />
+          <table>
+            <thead><tr><th>Tipo</th><th>Qtd</th><th>%</th></tr></thead>
+            <tbody>
+              {tiposDist.map(t=> (<tr key={t.tipo}><td>{t.tipo}</td><td>{t.q}</td><td>{t.pct}%</td></tr>))}
+            </tbody>
+          </table>
+        </div>
+        <div className="report-card">
+          <div className="report-title">Workload (capacidade × produção)</div>
+          {workload.map(r=> (
+            <div key={r.designer} className="chart-row"><div className="chart-label">{r.designer}</div><div className="chart-bar"><div className="chart-fill" style={{width:`${Math.round(100*r.real/Math.max(1,r.ideal))}%`, background: r.status==='Dentro'?'#BCD200': r.status==='Acima'?'#FF5E5E':'#FFE55C'}} /><div className="chart-value">{r.real}/{r.ideal}</div></div></div>
+          ))}
+          <div className="section-divider" />
+          <table>
+            <thead><tr><th>Designer</th><th>Capacidade ideal</th><th>Produção real</th><th>Status</th></tr></thead>
+            <tbody>
+              {workload.map(r=> (<tr key={r.designer}><td>{r.designer}</td><td>{r.ideal}</td><td>{r.real}</td><td>{r.status}</td></tr>))}
+            </tbody>
+          </table>
+        </div>
+        <div className="report-card">
+          <div className="report-title">Linha do tempo mensal</div>
+          <div className="chips">
+            {Object.entries(timeline).map(([designer,series])=> (
+              <div key={designer} style={{display:'inline-flex',alignItems:'center',gap:6}}><span className="chip">{designer}</span><Sparkline series={series} color={designer==='Thiago'?'#4DA3FF': designer==='Felipe'?'#00C58E':'#A66BFF'} /></div>
+            ))}
+          </div>
+        </div>
+        <div className="report-card">
+          <div className="report-title">Heatmap de produtividade</div>
+          <div className="heatmap">
+            {heatmap.map((row,ri)=> (
+              <div key={ri} className="heat-row">
+                {row.map((v,ci)=> { const color = v===0?'#222': v<2?'#4DA3FF33':'#4DA3FF'; return (<div key={ci} className="heat-cell" style={{background:color}} title={`D${ri} W${ci}: ${v}`} />) })}
               </div>
             ))}
           </div>
         </div>
-        <div className="widget">
-          <div className="widget-title">KPIs operacionais</div>
-          <div className="widget-subtitle">Visão instantânea do status da operação</div>
-          <div className="badge-grid">
-            <div className="badge-group">
-              {(()=>{
-                const val = countStatus('Aberta'); const p = pct(val)
-                return (
-                  <div className={`badge blue ${p>50?'critical':''}`}>
-                    <div>🔵 Pendente</div>
-                    <div>{val}</div>
-                    <div className="progress"><div className="progress-fill" style={{width:p+'%', background:'#4DA3FF'}} /></div>
-                    <div className="kpi-trend">{p}% do total</div>
-                  </div>
-                )
-              })()}
-              {(()=>{
-                const val = countStatus('Em Progresso'); const p = pct(val)
-                return (
-                  <div className="badge yellow">
-                    <div>🟡 Em produção</div>
-                    <div>{val}</div>
-                    <div className="progress"><div className="progress-fill" style={{width:p+'%', background:'#FFE55C'}} /></div>
-                    <div className="kpi-trend">{p}% do total</div>
-                  </div>
-                )
-              })()}
-              <div className="badge purple">
-                <div>🟣 Aguardando feedback</div>
-                <div>0</div>
-                <div className="progress"><div className="progress-fill" style={{width:'0%', background:'#6F2DBD'}} /></div>
-                <div className="kpi-trend">0% do total</div>
-              </div>
-            </div>
-            <div className="badge-group">
-              {(()=>{
-                const val = countStatus('Concluída'); const p = pct(val)
-                return (
-                  <div className="badge green ok">
-                    <div>🟢 Aprovada</div>
-                    <div>{val}</div>
-                    <div className="progress"><div className="progress-fill" style={{width:p+'%', background:'#00C58E'}} /></div>
-                    <div className="kpi-trend">{p}% do total</div>
-                  </div>
-                )
-              })()}
-              {(()=>{
-                const val = alerts[0].value; const p = pct(val)
-                return (
-                  <div className={`badge red ${val>0?'critical':''}`}>
-                    <div>🔴 Atrasada</div>
-                    <div>{val}</div>
-                    <div className="progress"><div className="progress-fill" style={{width:p+'%', background:'#FF6A6A'}} /></div>
-                    <div className="kpi-trend">{p}% do total</div>
-                  </div>
-                )
-              })()}
-            </div>
-          </div>
+        <div className="report-card">
+          <div className="report-title">Ranking dos designers</div>
+          <table>
+            <thead><tr><th>#</th><th>Designer</th><th>Score</th></tr></thead>
+            <tbody>
+              {ranking.map((r,i)=> (<tr key={r.designer}><td>{i+1}</td><td>{r.designer}</td><td>{r.score}/100</td></tr>))}
+            </tbody>
+          </table>
         </div>
-        <div className="widget">
-          <div className="widget-title">Criados por dia</div>
-          <div className="tabs-inline">
-            {['linha','barras','comparativo','designer'].map(t=> (
-              <button key={t} className={`btn-md ${chartTab===t?'active':''}`} onClick={()=> setChartTab(t)}>{t[0].toUpperCase()+t.slice(1)}</button>
+        <div className="report-card">
+          <div className="report-title">Alertas automáticos</div>
+          <div className="today-list">
+            {alerts.map(a=> (
+              <div key={a.text} className="today-item"><div className="today-name">{a.icon} {a.text}</div><div className="today-meta">{a.val}</div></div>
             ))}
           </div>
-          <div className="section-divider" />
-          {chartTab==='barras' && criados.map((v,i)=> (
-            <div key={i} className="hbar"><div className="hfill" style={{width:`${Math.round(100*v/maxC)}%`, background:'#4DA3FF'}} /><div className="hval">{v}</div></div>
-          ))}
-          {chartTab==='linha' && <Sparkline series={criados} color="#4DA3FF" />}
-          {chartTab==='comparativo' && (
-            <>
-              {criados.map((v,i)=> (
-                <div key={i} className="hbar"><div className="hfill" style={{width:`${Math.round(100*v/maxC)}%`, background:'#4DA3FF'}} /></div>
-              ))}
-              <div className="section-divider" />
-              {concluidos.map((v,i)=> (
-                <div key={i} className="hbar"><div className="hfill" style={{width:`${Math.round(100*v/maxD)}%`, background:'#00C58E'}} /></div>
-              ))}
-            </>
-          )}
-          {chartTab==='designer' && (
-            designers.map(d=> {
-              const val = items.filter(x=> x.designer===d).length
-              const p = pct(val)
-              return (
-                <div key={d} className="hbar"><div className="hfill" style={{width:p+'%', background:'#4DA3FF'}} /><div className="hval">{val} • {d}</div></div>
-              )
-            })
-          )}
         </div>
-        <div className="widget">
-          <div className="widget-title">Concluídos por dia</div>
-          <div className="section-divider" />
-          {concluidos.map((v,i)=> (
-            <div key={i} className="hbar"><div className="hfill" style={{width:`${Math.round(100*v/maxD)}%`, background:'#00C58E'}} /><div className="hval">{v}</div></div>
-          ))}
-        </div>
-        <div className="widget">
-          <div className="widget-title">Resumo por Designer</div>
-          <div className="designer-summary">
-            <table>
-              <thead>
-                <tr><th>Designer</th><th>Em produção</th><th>Concluído</th><th>Atrasadas</th><th>Média/dia</th></tr>
-              </thead>
-              <tbody>
-                {designers.map(d=>{
-                  const emProd = items.filter(x=> x.designer===d && x.status==='Em Progresso').length
-                  const concl = items.filter(x=> x.designer===d && x.status==='Concluída').length
-                  const atras = items.filter(x=> x.designer===d && x.status!=='Concluída' && x.prazo && x.prazo < hojeISO()).length
-                  const dates = items.filter(x=> x.designer===d).map(x=> x.dataCriacao)
-                  const min = dates.length? dates.reduce((a,b)=> a<b?a:b) : hojeISO()
-                  const max = dates.length? dates.reduce((a,b)=> a>b?a:b) : hojeISO()
-                  const toD = s=>{ const [y,m,dd]=s.split('-').map(Number); return new Date(y,m-1,dd) }
-                  const days = Math.max(1, Math.round((toD(max)-toD(min))/86400000)+1)
-                  const mediaDia = (concl/days).toFixed(1)
-                  return (
-                    <tr key={d}><td>{d}</td><td>{emProd}</td><td>{concl}</td><td>{atras}</td><td>{mediaDia}</td></tr>
-                  )
-                })}
-              </tbody>
-            </table>
+        <div className="report-card">
+          <div className="report-title">Resumo geral do período</div>
+          <div className="chips">
+            <span className="chip">Total criado: {items.length}</span>
+            <span className="chip">Total concluído: {concluidos.length}</span>
+            <span className="chip">Melhor designer: {ranking[0]?.designer||'—'}</span>
+            <span className="chip">Tipo mais produzido: {tiposDist.sort((a,b)=> b.q-a.q)[0]?.tipo||'—'}</span>
           </div>
-        </div>
-        <div className="widget">
-          <div className="widget-title">Alertas importantes</div>
-          {alerts.map(a=> (
-            <div key={a.label} className="card" style={{borderColor:a.color}}>
-              <div className="title">{a.label}</div>
-              <div>{a.value}</div>
-            </div>
-          ))}
         </div>
       </div>
     </div>
