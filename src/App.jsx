@@ -817,29 +817,31 @@ function FilterBar({ filtros, setFiltros, designers }) {
       <div className="seg" style={{flex:1, minWidth:220}}>
         <input className="search" placeholder="Pesquisar demandas..." value={filtros.q||''} onChange={e=> setFiltros(prev=> ({ ...prev, q: e.target.value }))} />
       </div>
-      <div className="seg">
-        <div className="filter-title">Período</div>
-        {list.map(lbl=> (
-          <button key={lbl} className={`btn-md ${period===keyOf(lbl)?'active':''}`} onClick={()=> setPeriod(keyOf(lbl))}>
-            <span className="icon">🗓</span><span>{lbl}</span>
-          </button>
-        ))}
-      </div>
-      <div className="seg">
-        <div className="filter-title">Designer</div>
-        {designersKeys.map(d=> (
-          <button key={d} className={`btn-md ${((filtros.designer||'')===d || (d==='Todos' && !filtros.designer))?'active':''}`} onClick={()=> setDesigner(d)}>
-            <span className="icon">👤</span><span>{d}</span>
-          </button>
-        ))}
-      </div>
-      <div className="seg">
-        <div className="filter-title">Data</div>
-        <div className="date-pill">
-          <span className="icon">🗓</span>
-          <input type="date" value={filtros.cIni||''} onChange={e=> setFiltros(prev=> ({ ...prev, cIni: e.target.value }))} />
-          <span style={{color:'var(--muted)'}}>—</span>
-          <input type="date" value={filtros.cFim||''} onChange={e=> setFiltros(prev=> ({ ...prev, cFim: e.target.value }))} />
+      <div className="filters-row">
+        <div className="seg">
+          <div className="filter-title">Período</div>
+          {list.map(lbl=> (
+            <button key={lbl} className={`btn-md ${period===keyOf(lbl)?'active':''}`} onClick={()=> setPeriod(keyOf(lbl))}>
+              <span className="icon">🗓</span><span>{lbl}</span>
+            </button>
+          ))}
+        </div>
+        <div className="seg">
+          <div className="filter-title">Designer</div>
+          {designersKeys.map(d=> (
+            <button key={d} className={`btn-md ${((filtros.designer||'')===d || (d==='Todos' && !filtros.designer))?'active':''}`} onClick={()=> setDesigner(d)}>
+              <span className="icon">👤</span><span>{d}</span>
+            </button>
+          ))}
+        </div>
+        <div className="seg">
+          <div className="filter-title">Data</div>
+          <div className="date-pill">
+            <span className="icon">🗓</span>
+            <input type="date" value={filtros.cIni||''} onChange={e=> setFiltros(prev=> ({ ...prev, cIni: e.target.value }))} />
+            <span style={{color:'var(--muted)'}}>—</span>
+            <input type="date" value={filtros.cFim||''} onChange={e=> setFiltros(prev=> ({ ...prev, cFim: e.target.value }))} />
+          </div>
         </div>
       </div>
     </div>
