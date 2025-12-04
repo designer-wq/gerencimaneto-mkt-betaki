@@ -7,6 +7,7 @@ const readObj = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)
 const writeLS = (k, v) => localStorage.setItem(k, JSON.stringify(v))
 
 const ESTADOS = ["Aberta", "Em Progresso", "Concluída"]
+const FIXED_STATUS = ["Pendente","Em produção","Aguardando Feedback","Aprovada","Revisar","Concluida"]
 const statusLabel = s => s === "Aberta" ? "Aberta" : s === "Em Progresso" ? "Em Progresso" : s === "Concluída" ? "Concluída" : s
 const statusDot = s => s === "Aberta" ? "🟡" : s === "Em Progresso" ? "🔵" : s === "Concluída" ? "🟢" : "•"
 const statusWithDot = s => `${statusDot(s)} ${statusLabel(s)}`
@@ -150,10 +151,10 @@ function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus,
           <div className="form-row"><label>Status</label>
             <select className="status-select" value={filtros.status} onChange={e=>set('status', e.target.value)}>
               <option value="">Status</option>
-              {cadStatus.map(s=> <option key={s} value={s}>{statusWithDot(s)}</option>)}
+              {FIXED_STATUS.map(s=> <option key={s} value={s}>{statusWithDot(s)}</option>)}
             </select>
             <div className="chips">
-              {cadStatus.map(s=> (
+              {FIXED_STATUS.map(s=> (
                 <button key={s} className={`chip ${filtros.status===s?'active':''}`} onClick={()=> set('status', filtros.status===s?'':s)}>{s}</button>
               ))}
             </div>
@@ -240,7 +241,7 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
               </td>
               <td>
                 <select className={`status-select ${statusClass(it.status)}`} value={it.status} onChange={e=>onStatus(it.id, e.target.value)} onClick={e=>e.stopPropagation()}>
-                  {cadStatus.map(s=> <option key={s} value={s}>{statusWithDot(s)}</option>)}
+                  {FIXED_STATUS.map(s=> <option key={s} value={s}>{statusWithDot(s)}</option>)}
                 </select>
               </td>
               <td>{it.dataSolicitacao}</td>
@@ -282,11 +283,12 @@ function BoardView({ items, onEdit, onStatus, cadStatus, onDelete, compact }) {
   const targetFor = (col) => available.has(col.map) ? col.map : (col.name==='Aguardando feedback' ? (available.has('Em Progresso')?'Em Progresso': cadStatus[0]) : (available.has('Concluída')?'Concluída': cadStatus[0]))
   const isInCol = (it, col) => {
     const s = String(it.status||'')
-    if (col.name==='Pendente') return s==='Aberta'
-    if (col.name==='Em produção') return s==='Em Progresso'
-    if (col.name==='Aguardando feedback') return s.toLowerCase().includes('feedback') || s==='Aguardando feedback'
-    if (col.name==='Aprovada') return s.toLowerCase().includes('aprov') || s==='Aprovada'
-    if (col.name==='Concluída') return s==='Concluída'
+    const v = s.toLowerCase()
+    if (col.name==='Pendente') return v.includes('pendente') || s==='Aberta' || s==='Pendente'
+    if (col.name==='Em produção') return v.includes('produção') || s==='Em Progresso' || s==='Em produção'
+    if (col.name==='Aguardando feedback') return v.includes('feedback') || s==='Aguardando feedback' || s==='Aguardando Feedback' || v.includes('revisar')
+    if (col.name==='Aprovada') return v.includes('aprov') || s==='Aprovada'
+    if (col.name==='Concluída') return s==='Concluída' || v.includes('concluida')
     return s===col.map
   }
   const onDropCol = (e, col) => {
@@ -479,7 +481,6 @@ function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadDesi
     <div className="panel">
       <div className="tabs">
         <button className={`tab ${tab==='designer'?'active':''}`} onClick={()=>setTab('designer')}>Designer</button>
-        <button className={`tab ${tab==='status'?'active':''}`} onClick={()=>setTab('status')}>Status</button>
         <button className={`tab ${tab==='tipo'?'active':''}`} onClick={()=>setTab('tipo')}>Tipo</button>
         <button className={`tab ${tab==='plataforma'?'active':''}`} onClick={()=>setTab('plataforma')}>Plataforma</button>
       </div>
@@ -576,13 +577,15 @@ export default function App() {
     setDemandas(prev=> prev.map(x=> {
       if (x.id!==id) return x
       const changed = x.status !== status
-      const revisoes = changed ? (x.revisoes||0)+1 : (x.revisoes||0)
-      const dataConclusao = status==='Concluída' ? (x.dataConclusao||today) : x.dataConclusao
+      const isRev = String(status||'').toLowerCase().includes('revisar')
+      const revisoes = changed && isRev ? (x.revisoes||0)+1 : (x.revisoes||0)
+      const isDone = String(status||'').toLowerCase().includes('concluida') || status==='Concluída'
+      const dataConclusao = isDone ? (x.dataConclusao||today) : x.dataConclusao
       return { ...x, status, revisoes, dataConclusao }
     }))
     if (apiEnabled) {
       const found = demandas.find(x=>x.id===id)
-      if (found) await api.updateDemanda(id, { ...found, status, dataConclusao: status==='Concluída' ? (found.dataConclusao||today) : found.dataConclusao, revisoes: (found.revisoes||0) + (found.status!==status?1:0) })
+      if (found) await api.updateDemanda(id, { ...found, status, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0) })
     }
   }
   const onDelete = async (id) => {
@@ -804,7 +807,11 @@ function FilterBar({ filtros, setFiltros, designers }) {
   const designersKeys = ['Todos', ...designers]
   return (
     <div className="filterbar">
+      <div className="seg" style={{flex:1, minWidth:220}}>
+        <input className="search" placeholder="Pesquisar demandas..." value={filtros.q||''} onChange={e=> setFiltros(prev=> ({ ...prev, q: e.target.value }))} />
+      </div>
       <div className="seg">
+        <div className="filter-title">Período</div>
         {list.map(lbl=> (
           <button key={lbl} className={`btn-md ${period===keyOf(lbl)?'active':''}`} onClick={()=> setPeriod(keyOf(lbl))}>
             <span className="icon">🗓</span><span>{lbl}</span>
@@ -812,6 +819,7 @@ function FilterBar({ filtros, setFiltros, designers }) {
         ))}
       </div>
       <div className="seg">
+        <div className="filter-title">Designer</div>
         {designersKeys.map(d=> (
           <button key={d} className={`btn-md ${((filtros.designer||'')===d || (d==='Todos' && !filtros.designer))?'active':''}`} onClick={()=> setDesigner(d)}>
             <span className="icon">👤</span><span>{d}</span>
@@ -819,6 +827,7 @@ function FilterBar({ filtros, setFiltros, designers }) {
         ))}
       </div>
       <div className="seg">
+        <div className="filter-title">Data</div>
         <div className="date-pill">
           <span className="icon">🗓</span>
           <input type="date" value={filtros.cIni||''} onChange={e=> setFiltros(prev=> ({ ...prev, cIni: e.target.value }))} />
@@ -1093,9 +1102,6 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros }) {
         </div>
         <div className="report-card">
           <div className="report-title">Tipos de peça</div>
-          <div className="chips">
-            {tiposDist.map(t=> (<span key={t.tipo} className="chip">{t.tipo}: {t.q} ({t.pct}%)</span>))}
-          </div>
           <div className="section-divider" />
           <table>
             <thead><tr><th>Tipo</th><th>Qtd</th><th>%</th></tr></thead>

@@ -222,6 +222,8 @@ a:hover{opacity:.85}
 .hval{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--text)}
 .filterbar{display:flex;align-items:center;gap:12px;background:#0D0D0D;border:1px solid #FFFFFF18;border-radius:16px;padding:14px;margin-bottom:24px;flex-wrap:wrap}
 .filterbar .seg{display:flex;gap:12px;flex-wrap:wrap}
+.filterbar .search{width:100%;max-width:420px;border:1px solid #FFFFFF1A;border-radius:22px;padding:8px 12px;height:34px;background:#111111CC;color:#FFFFFFCC}
+.filter-title{width:100%;font-size:12px;color:rgba(242,242,242,.6)}
 .btn-md{background:#111111CC;color:#FFFFFFCC;border:1px solid #FFFFFF1A;border-radius:22px;padding:8px 16px;height:34px;display:inline-flex;align-items:center;gap:8px;transition:background .15s ease-out,border-color .15s ease-out,color .15s ease-out;cursor:pointer}
 .btn-md .icon{color:#FFFFFF88}
 .btn-md:hover{background:#1A1A1ACC;border-color:#FFFFFF24}
