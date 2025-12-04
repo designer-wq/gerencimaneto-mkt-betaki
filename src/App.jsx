@@ -631,25 +631,7 @@ export default function App() {
           {route==='demandas' && (
             <FilterBar filtros={filtros} setFiltros={setFiltros} designers={designers} />
           )}
-          {route==='demandas' && (
-            <div className="topnav">
-              <ViewButtonsInner view={view} setView={setView} />
-            </div>
-          )}
-          {route==='demandas' && view==='table' && <TableView items={itemsSorted.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsSorted.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsSorted.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsSorted.length)} total={itemsSorted.length} compact={compact} />}
-          {route==='demandas' && view==='board' && <BoardView items={items} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} compact={compact} />}
-          {route==='demandas' && view==='calendar' && (
-          <div className="calendar-wrap">
-            <div className="calendar-toolbar">
-              <button onClick={()=>setView('table')}>Voltar</button>
-              <div className="spacer" />
-              <button onClick={()=> setCalRef(new Date(calRef.getFullYear(), calRef.getMonth()-1, 1))}>◀</button>
-              <button onClick={()=> setCalRef(new Date())}>Hoje</button>
-              <button onClick={()=> setCalRef(new Date(calRef.getFullYear(), calRef.getMonth()+1, 1))}>▶</button>
-            </div>
-            <CalendarView items={items} refDate={calRef} />
-          </div>
-          )}
+          {route==='demandas' && <TableView items={itemsSorted.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsSorted.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsSorted.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsSorted.length)} total={itemsSorted.length} compact={compact} />}
           {route==='demandas' && (
             <>
           <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} cadDesigners={cadDesigners} cadPlataformas={cadPlataformas} onDelete={onDelete} />
@@ -831,6 +813,14 @@ function FilterBar({ filtros, setFiltros, designers }) {
           {designersKeys.map(d=> (
             <button key={d} className={`btn-md ${((filtros.designer||'')===d || (d==='Todos' && !filtros.designer))?'active':''}`} onClick={()=> setDesigner(d)}>
               <span className="icon">👤</span><span>{d}</span>
+            </button>
+          ))}
+        </div>
+        <div className="seg">
+          <div className="filter-title">Status</div>
+          {FIXED_STATUS.map(s=> (
+            <button key={s} className={`btn-md ${((filtros.status||'')===s)?'active':''}`} onClick={()=> setFiltros(prev=> ({ ...prev, status: prev.status===s ? undefined : s }))}>
+              <span className="icon">●</span><span>{s}</span>
             </button>
           ))}
         </div>
