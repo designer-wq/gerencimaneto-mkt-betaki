@@ -772,6 +772,7 @@ export default function App() {
     const toDelete = apiEnabled ? [...demandas] : []
     setDemandas([])
     try { localStorage.removeItem('demandas') } catch {}
+    try { setFiltros({designer:'',status:'',plataforma:'',tipoMidia:'',origem:'',campanha:'',cIni:'',cFim:'',sIni:'',sFim:''}) } catch {}
     if (apiEnabled && toDelete.length) {
       try { await Promise.all(toDelete.map(x=> api.deleteDemanda(x.id))) } catch {}
     }
@@ -1031,16 +1032,15 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
   const retrabalhoPct = Math.round(100 * (items.filter(x=> (x.revisoes||0)>0).length / Math.max(1,total)))
   const slaGeralPct = (()=>{ const ok = concluidos.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot = concluidos.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })()
   const capacityPerDay = 4
-  const workingDays = 22
-  const capacidadeIdealEquipe = designers.length * capacityPerDay * workingDays
-  const capacidadeUsadaPct = Math.round(100 * (produTotal/Math.max(1,capacidadeIdealEquipe)))
+  const capacidadeIdealEquipe = designers.length * capacityPerDay * daysInPeriod
+  const capacidadeUsadaPct = (()=>{ const ideal=capacidadeIdealEquipe; if(!ideal) return 0; return Math.round(100 * (produTotal/ideal)) })()
   const countStatus = s => items.filter(x=> x.status===s).length
   const emProducao = countStatus('Em Progresso')
   const pendentes = countStatus('Aberta')
   const daysInPeriod = (()=>{
     const toD = s=>{ if(!s) return null; const [y,m,dd]=String(s).split('-').map(Number); return new Date(y,m-1,dd) }
     const ds = items.map(x=> toD(x.dataCriacao||x.dataSolicitacao)).filter(Boolean).sort((a,b)=> a-b)
-    if (!ds.length) return 1
+    if (!ds.length) return 0
     const start = ds[0], end = ds[ds.length-1]
     return Math.max(1, Math.round((end - start)/86400000) + 1)
   })()
@@ -1048,7 +1048,7 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
     const per = {}
     concluidos.forEach(x=>{ const d=x.designer||'—'; per[d]=(per[d]||0)+1 })
     const ideal = capacityPerDay * daysInPeriod
-    return designers.map(d=>{ const real = per[d]||0; const used = Math.round(100*(real/Math.max(1,ideal))); const status = used<=90?'Verde': used<=110?'Amarelo':'Vermelho'; return { designer:d, ideal, real, used, status } })
+    return designers.map(d=>{ const real = per[d]||0; const used = ideal ? Math.round(100*(real/ideal)) : 0; const status = ideal===0 ? 'Verde' : used<=90?'Verde': used<=110?'Amarelo':'Vermelho'; return { designer:d, ideal, real, used, status } })
   })()
   const conclPorDesigner = (()=>{ const m=new Map(); concluidos.forEach(x=> m.set(x.designer||'—',(m.get(x.designer||'—')||0)+1)); return Array.from(m.entries()).map(([designer,qty])=>({designer,qty})) })()
   const tempoEntregaStats = (()=>{
