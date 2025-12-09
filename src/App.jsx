@@ -440,7 +440,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
   const effectiveStart = startedAtMs ?? fallbackStart
   const totalMs = baseMs + (effectiveStart ? Math.max(0, nowTs - effectiveStart) : 0)
   return (
-    <div className="modal" onClick={mode==='create'? undefined : onClose}>
+    <div className="modal">
       <div className={`modal-dialog ${mode!=='create'?'tall':''}`} onClick={e=>e.stopPropagation()}>
         <div className="modal-header">
           {mode==='create' ? (
