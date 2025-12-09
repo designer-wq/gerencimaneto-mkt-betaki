@@ -1046,10 +1046,10 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
   const tempoEntregaStats = (()=>{
     const diffDays = (a,b)=>{ const toD = s=>{ const [y,m,dd]=String(s).split('-').map(Number); return new Date(y,m-1,dd) }; if(!a||!b) return null; return Math.max(0, Math.round((toD(b)-toD(a))/86400000)) }
     const per = {}
-    demandas.forEach(x=>{ if (x.dataConclusao) { const d=x.designer||'—'; const t=diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao); if (t!=null) { const cur=per[d]||{cnt:0,sum:0,min:9999,max:0}; per[d]={ cnt:cur.cnt+1, sum:cur.sum+t, min:Math.min(cur.min,t), max:Math.max(cur.max,t) } } } })
+    items.forEach(x=>{ if (x.dataConclusao) { const d=x.designer||'—'; const t=diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao); if (t!=null) { const cur=per[d]||{cnt:0,sum:0,min:9999,max:0}; per[d]={ cnt:cur.cnt+1, sum:cur.sum+t, min:Math.min(cur.min,t), max:Math.max(cur.max,t) } } } })
     return Object.entries(per).map(([designer,v])=> ({ designer, media: (v.sum/v.cnt)||0 }))
   })()
-  const slaStats = (()=>{ const per={}; demandas.forEach(x=>{ if (x.prazo && x.dataConclusao) { const d=x.designer||'—'; const ok=x.dataConclusao<=x.prazo; const cur=per[d]||{ok:0,total:0}; per[d]={ ok:cur.ok+(ok?1:0), total:cur.total+1 } } }); return Object.entries(per).map(([designer,v])=> ({ designer, pct: Math.round(100*((v.ok/(v.total||1)))) })) })()
+  const slaStats = (()=>{ const per={}; items.forEach(x=>{ if (x.prazo && x.dataConclusao) { const d=x.designer||'—'; const ok=x.dataConclusao<=x.prazo; const cur=per[d]||{ok:0,total:0}; per[d]={ ok:cur.ok+(ok?1:0), total:cur.total+1 } } }); return Object.entries(per).map(([designer,v])=> ({ designer, pct: Math.round(100*((v.ok/(v.total||1)))) })) })()
   const revisoesStats = (()=>{ const per={}; items.forEach(x=>{ const d=x.designer||'—'; const r=x.revisoes||0; const cur=per[d]||{ rTot:0, cnt:0 }; per[d]={ rTot:cur.rTot+r, cnt:cur.cnt+1 } }); return Object.entries(per).map(([designer,v])=> ({ designer, porPeca: +(v.rTot/(v.cnt||1)).toFixed(2) })) })()
   const ranking = (()=>{
     const prod = conclPorDesigner.reduce((m,{designer,qty})=> (m[designer]=qty,m), {})
@@ -1069,7 +1069,7 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
     const horas = Array.from({length:11},(_,i)=> i+8)
     const per = {}
     designers.forEach(d=> per[d]=horas.map(_=>0))
-    demandas.forEach(x=>{ if (x.startedAt) { try{ const dt=new Date(x.startedAt); const h=dt.getHours(); if(h>=8 && h<=18){ const d=x.designer||'—'; const idx=h-8; if(per[d]) per[d][idx]++ } }catch{} } })
+    items.forEach(x=>{ if (x.startedAt) { try{ const dt=new Date(x.startedAt); const h=dt.getHours(); if(h>=8 && h<=18){ const d=x.designer||'—'; const idx=h-8; if(per[d]) per[d][idx]++ } }catch{} } })
     return { horas, per }
   })()
   return (
@@ -1126,8 +1126,9 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
         <div className="section-card">
           <div className="widget-title">HEATMAP DE PRODUTIVIDADE POR HORÁRIO</div>
           <div className="heatmap">
-            <div className="heat-row" style={{gap:8,color:'var(--muted)'}}>
-              {heatmapHoras.horas.map(h=> (<div key={h} style={{width:32,textAlign:'center'}}>{String(h).padStart(2,'0')}h</div>))}
+            <div className="heat-row" style={{gap:6,color:'var(--muted)'}}>
+              <div className="chart-label" style={{width:120}} />
+              {heatmapHoras.horas.map(h=> (<div key={h} style={{width:24,textAlign:'center'}}>{String(h).padStart(2,'0')}h</div>))}
             </div>
             {designers.map(d=> (
               <div key={d} className="heat-row" style={{alignItems:'center'}}>
@@ -1221,7 +1222,7 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros }) {
   const qualidadeRanking = retrabalhoPorDesigner.slice().sort((a,b)=> a.porPeca-b.porPeca)
   const porCampanha = (()=>{ const per={}; items.forEach(x=>{ const c=x.campanha||'—'; per[c]=(per[c]||0)+1 }); return Object.entries(per).map(([campanha,q])=> ({ campanha, q })).sort((a,b)=> b.q-a.q) })()
   const retrabCampanha = (()=>{ const per={}; items.forEach(x=>{ const c=x.campanha||'—'; const r=x.revisoes||0; const cur=per[c]||{ rTot:0, cnt:0 }; per[c]={ rTot:cur.rTot+r, cnt:cur.cnt+1 } }); return Object.entries(per).map(([campanha,v])=> ({ campanha, porPeca:+((v.rTot/(v.cnt||1)).toFixed(2)) })).sort((a,b)=> b.porPeca-a.porPeca) })()
-  const slaCampanha = (()=>{ const per={}; demandas.forEach(x=>{ if (x.campanha) { const c=x.campanha; const ok=!!(x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo); const cur=per[c]||{ ok:0, total:0 }; per[c]={ ok:cur.ok+(ok?1:0), total:cur.total+ (x.dataConclusao?1:0) } } }); return Object.entries(per).map(([campanha,v])=> ({ campanha, sla: Math.round(100*((v.ok/(v.total||1)))) })) })()
+  const slaCampanha = (()=>{ const per={}; items.forEach(x=>{ if (x.campanha) { const c=x.campanha; const ok=!!(x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo); const tot=!!(x.prazo && x.dataConclusao); const cur=per[c]||{ ok:0, total:0 }; per[c]={ ok:cur.ok+(ok?1:0), total:cur.total+(tot?1:0) } } }); return Object.entries(per).map(([campanha,v])=> ({ campanha, sla: Math.round(100*((v.ok/(v.total||1)))) })) })()
   return (
     <div className="reports">
       <div className="reports-toolbar">
@@ -1358,8 +1359,8 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros }) {
           </div>
           <div className="section-divider" />
           <div className="heatmap">
-            <div className="heat-row" style={{gap:8,color:'var(--muted)'}}>
-              {Array.from({length:11},(_,i)=> i+8).map(h=> (<div key={h} style={{width:32,textAlign:'center'}}>{String(h).padStart(2,'0')}h</div>))}
+            <div className="heat-row" style={{gap:6,color:'var(--muted)'}}>
+              {Array.from({length:11},(_,i)=> i+8).map(h=> (<div key={h} style={{width:24,textAlign:'center'}}>{String(h).padStart(2,'0')}h</div>))}
             </div>
             <div className="heat-row">
               {Array.from({length:11},(_,i)=> i+8).map(h=> { const v=porHora[h]||0; const color=v===0?'#222': v<2?'#00C58E33':'#00C58E'; return (<div key={h} className="heat-cell" style={{background:color}} title={`${String(h).padStart(2,'0')}h: ${v}`} />) })}
