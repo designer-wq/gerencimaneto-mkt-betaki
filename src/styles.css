@@ -112,7 +112,7 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',system-
 .card .acts .icon + .icon{margin-left:8px}
 
 .modal{position:fixed;inset:0;background:rgba(17,24,39,.6);display:flex;align-items:center;justify-content:center;z-index:1000}
-.modal-dialog{width:1200px;max-width:98vw;background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow, 0 10px 30px rgba(0,0,0,.15));z-index:1001}
+.modal-dialog{position:relative;width:1200px;max-width:98vw;background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow, 0 10px 30px rgba(0,0,0,.15));z-index:2000}
 .modal-dialog.tall{height:auto;max-height:90vh;display:flex;flex-direction:column;overflow-x:hidden}
 .modal-dialog.tall .modal-body{flex:1 1 auto;overflow-y:auto;overflow-x:hidden}
 .modal-header{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--border)}
