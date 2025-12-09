@@ -115,22 +115,22 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',system-
 .modal-dialog{position:relative;width:1200px;max-width:98vw;background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow, 0 10px 30px rgba(0,0,0,.15));z-index:2000;display:block;opacity:1}
 .modal-dialog.tall{height:auto;max-height:90vh;display:flex;flex-direction:column;overflow-x:hidden}
 .modal-dialog.tall .modal-body{flex:1 1 auto;overflow-y:auto;overflow-x:hidden}
-.modal-header{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--border)}
+.modal-header{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--border);gap:12px}
 .title.editable{flex:1;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:#0b0e12;color:var(--text);font-size:18px;font-weight:600}
-.modal-body{padding:12px;display:flex;flex-direction:column;gap:10px}
+.modal-body{padding:12px;display:flex;flex-direction:column;gap:14px}
 .modal-actions{position:sticky;bottom:0;left:0;right:0;display:flex;justify-content:flex-end;gap:12px;padding:12px;border-top:1px solid var(--border);background:var(--panel);z-index:2}
-.modal-columns{display:grid;grid-template-columns:1.5fr 1fr;gap:16px}
+.modal-columns{display:grid;grid-template-columns:1.5fr 1fr;gap:18px}
 .modal-columns.cols3{grid-template-columns:1fr 1.7fr 1.2fr}
 .modal-columns.single{grid-template-columns:1fr}
-.modal-main{display:flex;flex-direction:column;gap:12px}
+.modal-main{display:flex;flex-direction:column;gap:16px}
 .row-2{display:flex;gap:12px}
 .row-2 .form-row{flex:1}
 .form-stack{display:flex;flex-direction:column;gap:12px}
-.modal-center{display:flex;flex-direction:column;gap:12px}
+.modal-center{display:flex;flex-direction:column;gap:16px}
 .date-row{display:flex;gap:12px}
 .date-row .form-row{flex:1}
 .modal-desc{display:flex;flex-direction:column;gap:12px}
-.modal-side{display:flex;flex-direction:column;gap:12px}
+.modal-side{display:flex;flex-direction:column;gap:16px}
 .activity-list{display:flex;flex-direction:column;gap:10px;max-height:50vh;overflow-y:auto;overflow-x:hidden;padding-right:6px}
 .activity-item{border:1px solid var(--border);border-radius:8px;padding:8px;background:#0b0e12}
 .activity-entry{display:flex;gap:10px;align-items:flex-start}
