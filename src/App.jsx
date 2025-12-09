@@ -443,7 +443,11 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
     <div className="modal" onClick={mode==='create'? undefined : onClose}>
       <div className={`modal-dialog ${mode!=='create'?'tall':''}`} onClick={e=>e.stopPropagation()}>
         <div className="modal-header">
-          <div className="title">{mode==='create'? '➕ Nova demanda' : '✏️ Editar demanda'}</div>
+          {mode==='create' ? (
+            <div className="title">➕ Nova demanda</div>
+          ) : (
+            <input className="title-input" value={titulo} onChange={e=>setTitulo(e.target.value)} placeholder="Título da demanda" />
+          )}
           <button className="icon" onClick={onClose}>✕</button>
         </div>
         <div className={`status-bar ${statusClass(initial?.status || 'Aberta')}`}>
@@ -463,7 +467,9 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
               <div className="form-row"><label>Tipo</label><select value={tipoMidia} onChange={e=>setTipoMidia(e.target.value)}>
                 {(cadTipos||['Post','Story','Banner','Vídeo','Outro']).map(t=> <option key={t} value={t}>{t}</option>)}
               </select></div>
-              <div className="form-row"><label>Titulo</label><input value={titulo} onChange={e=>setTitulo(e.target.value)} required /></div>
+              {mode==='create' && (
+                <div className="form-row"><label>Titulo</label><input value={titulo} onChange={e=>setTitulo(e.target.value)} required /></div>
+              )}
               <div className="form-row"><label>Plataforma</label>
                 <select value={plataforma} onChange={e=>setPlataforma(e.target.value)}>
                   <option value="">Plataforma</option>
