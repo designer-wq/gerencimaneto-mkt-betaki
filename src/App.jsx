@@ -1031,12 +1031,6 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
   const revisoesTot = items.reduce((acc,x)=> acc + (x.revisoes||0), 0)
   const retrabalhoPct = Math.round(100 * (items.filter(x=> (x.revisoes||0)>0).length / Math.max(1,total)))
   const slaGeralPct = (()=>{ const ok = concluidos.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot = concluidos.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })()
-  const capacityPerDay = 4
-  const capacidadeIdealEquipe = designers.length * capacityPerDay * daysInPeriod
-  const capacidadeUsadaPct = (()=>{ const ideal=capacidadeIdealEquipe; if(!ideal) return 0; return Math.round(100 * (produTotal/ideal)) })()
-  const countStatus = s => items.filter(x=> x.status===s).length
-  const emProducao = countStatus('Em Progresso')
-  const pendentes = countStatus('Aberta')
   const daysInPeriod = (()=>{
     const toD = s=>{ if(!s) return null; const [y,m,dd]=String(s).split('-').map(Number); return new Date(y,m-1,dd) }
     const ds = items.map(x=> toD(x.dataCriacao||x.dataSolicitacao)).filter(Boolean).sort((a,b)=> a-b)
@@ -1044,6 +1038,12 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
     const start = ds[0], end = ds[ds.length-1]
     return Math.max(1, Math.round((end - start)/86400000) + 1)
   })()
+  const capacityPerDay = 4
+  const capacidadeIdealEquipe = designers.length * capacityPerDay * daysInPeriod
+  const capacidadeUsadaPct = (()=>{ const ideal=capacidadeIdealEquipe; if(!ideal) return 0; return Math.round(100 * (produTotal/ideal)) })()
+  const countStatus = s => items.filter(x=> x.status===s).length
+  const emProducao = countStatus('Em Progresso')
+  const pendentes = countStatus('Aberta')
   const workloadRows = (()=>{
     const per = {}
     concluidos.forEach(x=>{ const d=x.designer||'—'; per[d]=(per[d]||0)+1 })
