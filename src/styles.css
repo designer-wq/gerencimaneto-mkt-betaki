@@ -302,7 +302,8 @@ a:hover{opacity:.85}
 .gantt{display:grid;grid-template-columns:120px 1fr;gap:10px}
 .gantt-row{display:flex;align-items:center;gap:8px}
 .gantt-bar{height:12px;border-radius:999px;background:#4DA3FF}
-.status-bar{height:28px;display:flex;align-items:center;justify-content:center;font-weight:600;border-bottom:1px solid var(--border)}
+.status-bar{height:28px;display:flex;align-items:center;justify-content:center;font-weight:600;border-bottom:1px solid var(--border);position:relative}
+.status-bar .timer{position:absolute;right:12px;font-weight:700}
 .status-bar.st-pending{background:#3b82f6;color:#fff}
 .status-bar.st-progress{background:#f59e0b;color:#111}
 .status-bar.st-feedback{background:#7c3aed;color:#fff}

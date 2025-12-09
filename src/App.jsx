@@ -430,6 +430,15 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
   const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios, historico }) }
   const addComentario = () => { const v = novoComentario.trim(); if (!v) return; const c = { texto: v, data: hojeISO() }; setComentarios(prev=> [c, ...prev]); setHistorico(prev=> [{ tipo:'comentario', autor:'Você', data: c.data, texto: v }, ...prev]); setNovoComentario('') }
   const fmtDT = (s)=>{ if(!s) return ''; try{ return new Date(s).toLocaleString('pt-BR',{ day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) }catch{return s} }
+  const [nowTs, setNowTs] = useState(Date.now())
+  useEffect(()=>{ const id = setInterval(()=> setNowTs(Date.now()), 1000); return ()=> clearInterval(id) },[])
+  const fmtHMS = (ms)=>{ if(!ms||ms<=0) return '00:00:00'; const s = Math.floor(ms/1000); const hh = String(Math.floor(s/3600)).padStart(2,'0'); const mm = String(Math.floor((s%3600)/60)).padStart(2,'0'); const ss = String(s%60).padStart(2,'0'); return `${hh}:${mm}:${ss}` }
+  const baseMs = Number(initial?.tempoProducaoMs||0)
+  const startedAtMs = initial?.startedAt ? Date.parse(initial.startedAt) : null
+  const isProdNow = /produ|progresso/i.test(String(initial?.status||''))
+  const [fallbackStart] = useState(()=> (!startedAtMs && isProdNow) ? Date.now() : null)
+  const effectiveStart = startedAtMs ?? fallbackStart
+  const totalMs = baseMs + (effectiveStart ? Math.max(0, nowTs - effectiveStart) : 0)
   return (
     <div className="modal" onClick={mode==='create'? undefined : onClose}>
       <div className={`modal-dialog ${mode!=='create'?'tall':''}`} onClick={e=>e.stopPropagation()}>
@@ -437,7 +446,10 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
           <div className="title">{mode==='create'? '➕ Nova demanda' : '✏️ Editar demanda'}</div>
           <button className="icon" onClick={onClose}>✕</button>
         </div>
-        <div className={`status-bar ${statusClass(initial?.status || 'Aberta')}`}>{initial?.status || 'Aberta'}</div>
+        <div className={`status-bar ${statusClass(initial?.status || 'Aberta')}`}>
+          <div>{initial?.status || 'Aberta'}</div>
+          {mode!=='create' && (<div className="timer">⏱ {fmtHMS(totalMs)}</div>)}
+        </div>
         <form id="modalForm" className="modal-body" onSubmit={submit}>
           <div className={`modal-columns ${mode==='create'?'single':'cols3'}`}>
             <div className="modal-main">
@@ -661,6 +673,21 @@ export default function App() {
     setDemandas(prev=> prev.map(x=> {
       if (x.id!==id) return x
       const changed = x.status !== status
+      const wasProd = String(x.status||'').toLowerCase().includes('produ') || String(x.status||'').toLowerCase().includes('progresso')
+      const isProd = String(status||'').toLowerCase().includes('produ') || String(status||'').toLowerCase().includes('progresso')
+      const nowMs = Date.now()
+      let tempoProducaoMs = Number(x.tempoProducaoMs||0)
+      let startedAt = x.startedAt || null
+      if (changed) {
+        if (wasProd && !isProd && startedAt) {
+          const startedMs = Date.parse(startedAt)
+          if (!isNaN(startedMs)) tempoProducaoMs += Math.max(0, nowMs - startedMs)
+          startedAt = null
+        }
+        if (!wasProd && isProd && !startedAt) {
+          startedAt = new Date(nowMs).toISOString()
+        }
+      }
       const isRev = String(status||'').toLowerCase().includes('revisar')
       const revisoes = changed && isRev ? (x.revisoes||0)+1 : (x.revisoes||0)
       const isDone = String(status||'').toLowerCase().includes('concluida') || status==='Concluída'
@@ -668,11 +695,11 @@ export default function App() {
       const dataCriacao = isDone ? (x.dataCriacao||today) : x.dataCriacao
       const histItem = changed ? { tipo:'status', autor:'Você', data: today, de: x.status, para: status } : null
       const historico = histItem ? [histItem, ...(x.historico||[])] : (x.historico||[])
-      return { ...x, status, revisoes, dataConclusao, dataCriacao, historico }
+      return { ...x, status, revisoes, dataConclusao, dataCriacao, historico, tempoProducaoMs, startedAt }
     }))
     if (apiEnabled) {
       const found = demandas.find(x=>x.id===id)
-      if (found) await api.updateDemanda(id, { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: [{ tipo:'status', autor:'Você', data: today, de: found.status, para: status }, ...(found.historico||[]) ] })
+      if (found) await api.updateDemanda(id, { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: [{ tipo:'status', autor:'Você', data: today, de: found.status, para: status }, ...(found.historico||[]) ], tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt })
     }
   }
   const onDelete = async (id) => {
@@ -686,7 +713,7 @@ export default function App() {
       if (apiEnabled) await api.updateDemanda(editing.id, updated)
     } else {
       const inicial = { tipo:'status', autor:'Você', data: hojeISO(), de: '', para: 'Aberta' }
-      const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, dataSolicitacao: dataSolic, dataCriacao: '', status: 'Aberta', prazo }
+      const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, dataSolicitacao: dataSolic, dataCriacao: '', status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null }
       if (apiEnabled) {
         const saved = await api.createDemanda(novo)
         setDemandas(prev=> [...prev, { ...novo, id: saved?.id ?? proxId(prev) }])
