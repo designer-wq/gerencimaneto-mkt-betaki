@@ -501,7 +501,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
               
               </div>
               {mode==='create' && (
-                <div className="form-row"><label>Descrição</label><textarea rows={8} className="desc-input" value={descricao} onChange={e=>{ setDescricao(e.target.value); try{ e.target.style.height='auto'; e.target.style.height=(e.target.scrollHeight)+'px' }catch{} }} /></div>
+                <div className="form-row"><label>Descrição</label><textarea rows={8} className="desc-input" value={descricao} onChange={e=> setDescricao(e.target.value)} /></div>
               )}
               
             </div>
@@ -512,7 +512,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
                   <div className="form-row"><label>Data de Criação</label><input type="date" value={dataCriacao} disabled /></div>
                   <div className="form-row"><label>Prazo</label><input type="date" value={prazo} onChange={e=>setPrazo(e.target.value)} /></div>
                 </div>
-                <div className="form-row"><label>Descrição</label><textarea rows={12} className="desc-input" value={descricao} onChange={e=>{ setDescricao(e.target.value); try{ e.target.style.height='auto'; e.target.style.height=(e.target.scrollHeight)+'px' }catch{} }} /></div>
+                <div className="form-row"><label>Descrição</label><textarea rows={12} className="desc-input" value={descricao} onChange={e=> setDescricao(e.target.value)} /></div>
               </div>
             )}
             {mode!=='create' && (
