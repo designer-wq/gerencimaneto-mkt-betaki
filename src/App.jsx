@@ -8,6 +8,7 @@ const writeLS = (k, v) => localStorage.setItem(k, JSON.stringify(v))
 
 const ESTADOS = ["Aberta", "Em Progresso", "Concluída"]
 const FIXED_STATUS = ["Pendente","Em produção","Aguardando Feedback","Aprovada","Revisar","Concluida"]
+const ORIGENS = ["Instagram","Tráfego Pago","CRM","Influencers","Site","Branding","Outros"]
 const statusLabel = s => s === "Aberta" ? "Aberta" : s === "Em Progresso" ? "Em Progresso" : s === "Concluída" ? "Concluída" : s
 const statusDot = s => s === "Aberta" ? "🟡" : s === "Em Progresso" ? "🔵" : s === "Concluída" ? "🟢" : "•"
 const statusWithDot = s => `${statusDot(s)} ${statusLabel(s)}`
@@ -130,7 +131,7 @@ function ViewButtonsInner({ view, setView }) {
   )
 }
 
-function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus, cadPlataformas, cadTipos }) {
+function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus, cadPlataformas, cadTipos, origens, campanhas }) {
   const set = (k,v)=>setFiltros(prev=>({ ...prev, [k]: v }))
   const clear = ()=>setFiltros({designer:'',status:'',plataforma:'',cIni:'',cFim:'',sIni:'',sFim:''})
   if (!open) return null
@@ -165,6 +166,19 @@ function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus,
                 <button key={t} className={`chip ${filtros.tipoMidia===t?'active':''}`} onClick={()=> set('tipoMidia', filtros.tipoMidia===t?'':t)}>{t}</button>
               ))}
             </div>
+          </div>
+          <div className="form-row"><label>Origem</label>
+            <div className="chips">
+              {(origens||ORIGENS).map(o=> (
+                <button key={o} className={`chip ${filtros.origem===o?'active':''}`} onClick={()=> set('origem', filtros.origem===o?'':o)}>{o}</button>
+              ))}
+            </div>
+          </div>
+          <div className="form-row"><label>Campanha</label>
+            <select value={filtros.campanha||''} onChange={e=>set('campanha', e.target.value)}>
+              <option value="">Campanha</option>
+              {(campanhas||[]).map(c=> <option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
           <div className="form-row"><label>Data de Criação</label>
             <div className="range">
@@ -203,6 +217,8 @@ function aplicarFiltros(items, f) {
     if (f.status && it.status !== f.status) return false
     if (f.tipoMidia && it.tipoMidia !== f.tipoMidia) return false
     if (f.plataforma && (it.plataforma||'') !== f.plataforma) return false
+    if (f.origem && (it.origem||'') !== f.origem) return false
+    if (f.campanha && (it.campanha||'') !== f.campanha) return false
     if (f.cIni && it.dataCriacao && it.dataCriacao < f.cIni) return false
     if (f.cFim && it.dataCriacao && it.dataCriacao > f.cFim) return false
     if (f.sIni && it.dataSolicitacao < f.sIni) return false
@@ -410,6 +426,8 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
   const [comentarios, setComentarios] = useState(initial?.comentarios || [])
   const [novoComentario, setNovoComentario] = useState('')
   const [historico, setHistorico] = useState(initial?.historico || [])
+  const [origem, setOrigem] = useState(initial?.origem || '')
+  const [campanha, setCampanha] = useState(initial?.campanha || '')
   useEffect(()=>{
     setDesigner(initial?.designer || '')
     setTipoMidia(initial?.tipoMidia || 'Post')
@@ -425,8 +443,10 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
     setComentarios(initial?.comentarios || [])
     setNovoComentario('')
     setHistorico(initial?.historico || [])
+    setOrigem(initial?.origem || '')
+    setCampanha(initial?.campanha || '')
   },[initial, open, cadDesigners, cadTipos, cadPlataformas])
-  const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios, historico }) }
+  const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) }
   const addComentario = () => { const v = novoComentario.trim(); if (!v) return; const c = { texto: v, data: hojeISO() }; setComentarios(prev=> [c, ...prev]); setHistorico(prev=> [{ tipo:'comentario', autor:'Você', data: c.data, texto: v }, ...prev]); setNovoComentario('') }
   const fmtDT = (s)=>{ if(!s) return ''; try{ return new Date(s).toLocaleString('pt-BR',{ day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) }catch{return s} }
   const [nowTs, setNowTs] = useState(Date.now())
@@ -475,6 +495,15 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
                   <option value="">Plataforma</option>
                   {(cadPlataformas||[]).map(p=> <option key={p} value={p}>{p}</option>)}
                 </select>
+              </div>
+              <div className="form-row"><label>Origem da Demanda</label>
+                <select value={origem} onChange={e=>setOrigem(e.target.value)} required>
+                  <option value="">Origem</option>
+                  {ORIGENS.map(o=> <option key={o} value={o}>{o}</option>)}
+                </select>
+              </div>
+              <div className="form-row"><label>Campanha</label>
+                <input value={campanha} onChange={e=>setCampanha(e.target.value)} placeholder="Ex: Black Friday" />
               </div>
               <div className="form-row"><label>Link</label><input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://" /></div>
               {mode==='create' ? (
@@ -618,8 +647,8 @@ export default function App() {
   const [demandas, setDemandas] = useState(ler())
   const [view, setView] = useState('table')
   const [compact, setCompact] = useState(false)
-  const [route, setRoute] = useState('demandas')
-  const [filtros, setFiltros] = useState({designer:'',status:'',plataforma:'',cIni:'',cFim:'',sIni:'',sFim:''})
+  const [route, setRoute] = useState('dashboard')
+  const [filtros, setFiltros] = useState({designer:'',status:'',plataforma:'',tipoMidia:'',origem:'',campanha:'',cIni:'',cFim:'',sIni:'',sFim:''})
   const [filterOpen, setFilterOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [modalMode, setModalMode] = useState('create')
@@ -633,6 +662,7 @@ export default function App() {
   const [cadStatusColors, setCadStatusColors] = useState(readObj('cadStatusColors', { Aberta:'#f59e0b', "Em Progresso":"#3b82f6", "Concluída":"#10b981" }))
   const designersFromDemandas = useMemo(()=> Array.from(new Set(demandas.map(x=>x.designer).filter(Boolean))).sort(), [demandas])
   const designers = useMemo(()=> Array.from(new Set([...cadDesigners, ...designersFromDemandas])).sort(), [cadDesigners, designersFromDemandas])
+  const campanhas = useMemo(()=> Array.from(new Set(demandas.map(x=>x.campanha).filter(Boolean))).sort(), [demandas])
   const items = useMemo(()=> aplicarFiltros(demandas, filtros), [demandas, filtros])
   const itemsSorted = useMemo(()=> items.slice().sort((a,b)=>{
     const da = a.dataCriacao||''; const db = b.dataCriacao||''; const c = db.localeCompare(da); if (c!==0) return c; const ia = a.id||0; const ib = b.id||0; return ib - ia
@@ -684,6 +714,7 @@ export default function App() {
       const nowMs = Date.now()
       let tempoProducaoMs = Number(x.tempoProducaoMs||0)
       let startedAt = x.startedAt || null
+      let finishedAt = x.finishedAt || null
       if (changed) {
         if (wasProd && !isProd && startedAt) {
           const startedMs = Date.parse(startedAt)
@@ -699,27 +730,30 @@ export default function App() {
       const isDone = String(status||'').toLowerCase().includes('concluida') || status==='Concluída'
       const dataConclusao = isDone ? (x.dataConclusao||today) : x.dataConclusao
       const dataCriacao = isDone ? (x.dataCriacao||today) : x.dataCriacao
+      if (changed && isDone) finishedAt = new Date(nowMs).toISOString()
       const histItem = changed ? { tipo:'status', autor:'Você', data: today, de: x.status, para: status } : null
       const historico = histItem ? [histItem, ...(x.historico||[])] : (x.historico||[])
-      return { ...x, status, revisoes, dataConclusao, dataCriacao, historico, tempoProducaoMs, startedAt }
+      return { ...x, status, revisoes, dataConclusao, dataCriacao, historico, tempoProducaoMs, startedAt, finishedAt }
     }))
     if (apiEnabled) {
       const found = demandas.find(x=>x.id===id)
-      if (found) await api.updateDemanda(id, { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: [{ tipo:'status', autor:'Você', data: today, de: found.status, para: status }, ...(found.historico||[]) ], tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt })
+      if (found) await api.updateDemanda(id, { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: [{ tipo:'status', autor:'Você', data: today, de: found.status, para: status }, ...(found.historico||[]) ], tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.finishedAt })
     }
   }
   const onDelete = async (id) => {
     setDemandas(prev=> prev.filter(x=> x.id!==id))
     if (apiEnabled) await api.deleteDemanda(id)
   }
-  const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios, historico }) => {
+  const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) => {
     if (modalMode==='edit' && editing) {
-      const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, comentarios: comentarios ?? editing.comentarios, historico: historico ?? editing.historico, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, plataforma, prazo }
+      const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, comentarios: comentarios ?? editing.comentarios, historico: historico ?? editing.historico, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, plataforma, prazo, origem, campanha }
       setDemandas(prev=> prev.map(x=> x.id===editing.id ? updated : x))
       if (apiEnabled) await api.updateDemanda(editing.id, updated)
     } else {
-      const inicial = { tipo:'status', autor:'Você', data: hojeISO(), de: '', para: 'Aberta' }
-      const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, dataSolicitacao: dataSolic, dataCriacao: '', status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null }
+      const hoje = hojeISO()
+      const inicial = { tipo:'status', autor:'Você', data: hoje, de: '', para: 'Aberta' }
+      const moverProd = { tipo:'status', autor:'Você', data: hoje, de: 'Aberta', para: 'Em Progresso' }
+      const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: [], historico: [moverProd, inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: hoje, status: 'Em Progresso', prazo, tempoProducaoMs: 0, startedAt: new Date().toISOString(), finishedAt: null, revisoes: 0 }
       if (apiEnabled) {
         const saved = await api.createDemanda(novo)
         setDemandas(prev=> [...prev, { ...novo, id: saved?.id ?? proxId(prev) }])
@@ -742,6 +776,9 @@ export default function App() {
       <div className="content">
         <div className="app">
           <Header onNew={onNew} view={view} setView={setView} showNew={false} />
+          {route==='dashboard' && (
+            <DashboardView demandas={demandas} items={items} designers={designers} setView={setView} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} compact={compact} calRef={calRef} setCalRef={setCalRef} />
+          )}
           {route==='demandas' && (
             <div className="demandas-layout">
               <div className="sidebar-col">
@@ -761,7 +798,7 @@ export default function App() {
           {route==='demandas' && (
             <>
           <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} cadDesigners={cadDesigners} cadPlataformas={cadPlataformas} onDelete={onDelete} />
-              <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designers} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} cadPlataformas={cadPlataformas} cadTipos={cadTipos} />
+              <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designers} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} cadPlataformas={cadPlataformas} cadTipos={cadTipos} origens={ORIGENS} campanhas={campanhas} />
             </>
           )}
           {route==='config' && (
@@ -784,6 +821,7 @@ function Sidebar({ route, setRoute }) {
     <aside className="sidebar">
       <nav>
         <ul className="nav-list">
+          <li><a href="#" className={`nav-link ${route==='dashboard'?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute('dashboard') }}>📊 Dashboard</a></li>
           <li><a href="#" className={`nav-link ${route==='demandas'?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute('demandas') }}>📋 Demandas</a></li>
           <li><a href="#" className={`nav-link ${route==='config'?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute('config') }}>🎨 Configurações</a></li>
           <li><a href="#" className={`nav-link ${route==='cadastros'?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute('cadastros') }}>⚙️ Cadastros</a></li>
@@ -967,49 +1005,137 @@ function FilterBar({ filtros, setFiltros, designers, showSearch }) {
 }
 
 function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, cadStatus, onDelete, onDuplicate, compact, calRef, setCalRef }) {
-  const count = (pred) => items.filter(pred).length
-  const countStatus = s => items.filter(x=> x.status===s).length
-  const kpi = [{ icon:'📅', title:'Criados no período', value: count(_=>true) }, { icon:'🏁', title:'Concluídos no período', value: count(x=> x.status==='Concluída') }, { icon:'📌', title:'Pendentes (Abertas)', value: countStatus('Aberta') }, { icon:'⚙', title:'Em produção', value: countStatus('Em Progresso') }]
-  const alerts = [
-    { label:'demandas atrasadas', color:'#FF6A6A', value: demandas.filter(x=> x.status!=='Concluída' && x.prazo && x.prazo < hojeISO()).length },
-    { label:'vencem amanhã', color:'#FFE55C', value: demandas.filter(x=> x.status!=='Concluída' && x.prazo===(()=>{ const d=new Date(); d.setDate(d.getDate()+1); const z=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}` })()).length },
-    { label:'sem designer atribuído', color:'#4DA3FF', value: demandas.filter(x=> !x.designer).length },
-    { label:'com mais de 2 revisões', color:'#6F2DBD', value: 0 },
-    { label:'sem prazo definido', color:'#BDBDBD', value: demandas.filter(x=> !x.prazo).length },
-  ]
-  const weekCounts = (arr) => {
-    const byDay = [0,0,0,0,0,0,0]
-    arr.forEach(x=>{ const d = new Date(x.dataCriacao||x.dataCriacao||hojeISO()); byDay[d.getDay()]++ })
-    return byDay
-  }
-  const criados = weekCounts(items)
-  const concluidos = weekCounts(items.filter(x=> x.status==='Concluída'))
-  const maxC = Math.max(...criados,1), maxD = Math.max(...concluidos,1)
-  const files = demandas.flatMap(x=> (x.arquivos||[])).slice(0,50)
-  const ganttData = demandas.filter(x=> x.prazo).map(x=> ({ titulo:x.titulo, inicio: x.dataCriacao || x.dataSolicitacao || hojeISO(), fim: x.prazo, status: x.status }))
-  const monthDays = (()=>{ const d=new Date(); const s= new Date(d.getFullYear(), d.getMonth(), 1); const e= new Date(d.getFullYear(), d.getMonth()+1, 0); return { start:s, end:e, len:e.getDate() } })()
-  const dayIndex = iso => { const [y,m,dd]=iso.split('-').map(Number); const dt = new Date(y,m-1,dd); return dt.getDate() }
-  const colorByStatus = s => s==='Aberta' ? '#4DA3FF' : s==='Em Progresso' ? '#FFE55C' : '#00C58E'
   const total = items.length || 1
-  const pct = (n)=> Math.round((n/total)*100)
-  const [chartTab, setChartTab] = useState('barras')
+  const concluidos = items.filter(x=> x.status==='Concluída')
+  const produTotal = concluidos.length
+  const backlog = items.filter(x=> x.status!=='Concluída').length
+  const revisoesTot = items.reduce((acc,x)=> acc + (x.revisoes||0), 0)
+  const retrabalhoPct = Math.round(100 * (items.filter(x=> (x.revisoes||0)>0).length / Math.max(1,total)))
+  const slaGeralPct = (()=>{ const ok = concluidos.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot = concluidos.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })()
+  const capacityPerDay = 4
+  const workingDays = 22
+  const capacidadeIdealEquipe = designers.length * capacityPerDay * workingDays
+  const capacidadeUsadaPct = Math.round(100 * (produTotal/Math.max(1,capacidadeIdealEquipe)))
+  const countStatus = s => items.filter(x=> x.status===s).length
+  const emProducao = countStatus('Em Progresso')
+  const pendentes = countStatus('Aberta')
+  const daysInPeriod = (()=>{
+    const toD = s=>{ if(!s) return null; const [y,m,dd]=String(s).split('-').map(Number); return new Date(y,m-1,dd) }
+    const ds = items.map(x=> toD(x.dataCriacao||x.dataSolicitacao)).filter(Boolean).sort((a,b)=> a-b)
+    if (!ds.length) return 1
+    const start = ds[0], end = ds[ds.length-1]
+    return Math.max(1, Math.round((end - start)/86400000) + 1)
+  })()
+  const workloadRows = (()=>{
+    const per = {}
+    concluidos.forEach(x=>{ const d=x.designer||'—'; per[d]=(per[d]||0)+1 })
+    const ideal = capacityPerDay * daysInPeriod
+    return designers.map(d=>{ const real = per[d]||0; const used = Math.round(100*(real/Math.max(1,ideal))); const status = used<=90?'Verde': used<=110?'Amarelo':'Vermelho'; return { designer:d, ideal, real, used, status } })
+  })()
+  const conclPorDesigner = (()=>{ const m=new Map(); concluidos.forEach(x=> m.set(x.designer||'—',(m.get(x.designer||'—')||0)+1)); return Array.from(m.entries()).map(([designer,qty])=>({designer,qty})) })()
+  const tempoEntregaStats = (()=>{
+    const diffDays = (a,b)=>{ const toD = s=>{ const [y,m,dd]=String(s).split('-').map(Number); return new Date(y,m-1,dd) }; if(!a||!b) return null; return Math.max(0, Math.round((toD(b)-toD(a))/86400000)) }
+    const per = {}
+    demandas.forEach(x=>{ if (x.dataConclusao) { const d=x.designer||'—'; const t=diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao); if (t!=null) { const cur=per[d]||{cnt:0,sum:0,min:9999,max:0}; per[d]={ cnt:cur.cnt+1, sum:cur.sum+t, min:Math.min(cur.min,t), max:Math.max(cur.max,t) } } } })
+    return Object.entries(per).map(([designer,v])=> ({ designer, media: (v.sum/v.cnt)||0 }))
+  })()
+  const slaStats = (()=>{ const per={}; demandas.forEach(x=>{ if (x.prazo && x.dataConclusao) { const d=x.designer||'—'; const ok=x.dataConclusao<=x.prazo; const cur=per[d]||{ok:0,total:0}; per[d]={ ok:cur.ok+(ok?1:0), total:cur.total+1 } } }); return Object.entries(per).map(([designer,v])=> ({ designer, pct: Math.round(100*((v.ok/(v.total||1)))) })) })()
+  const revisoesStats = (()=>{ const per={}; items.forEach(x=>{ const d=x.designer||'—'; const r=x.revisoes||0; const cur=per[d]||{ rTot:0, cnt:0 }; per[d]={ rTot:cur.rTot+r, cnt:cur.cnt+1 } }); return Object.entries(per).map(([designer,v])=> ({ designer, porPeca: +(v.rTot/(v.cnt||1)).toFixed(2) })) })()
+  const ranking = (()=>{
+    const prod = conclPorDesigner.reduce((m,{designer,qty})=> (m[designer]=qty,m), {})
+    const slaM = slaStats.reduce((m,{designer,pct})=> (m[designer]=pct,m), {})
+    const tempoM = tempoEntregaStats.reduce((m,{designer,media})=> (m[designer]=media,m), {})
+    const revM = revisoesStats.reduce((m,{designer,porPeca})=> (m[designer]=porPeca,m), {})
+    const names = Array.from(new Set([...Object.keys(prod), ...Object.keys(slaM), ...Object.keys(tempoM), ...Object.keys(revM)])).filter(Boolean)
+    const norm = (val, min, max) => { if(max===min) return 1; return Math.max(0, Math.min(1, (val-min)/(max-min))) }
+    const maxProd = Math.max(...Object.values(prod||{_:-1}),0), minProd = Math.min(...Object.values(prod||{_:-1}),0)
+    const maxSla = 100, minSla = 0
+    const maxTempo = Math.max(...Object.values(tempoM||{_:-1}),0), minTempo = Math.min(...Object.values(tempoM||{_:-1}),0)
+    const maxRev = Math.max(...Object.values(revM||{_:-1}),0), minRev = Math.min(...Object.values(revM||{_:-1}),0)
+    const list = names.map(n=>{ const sProd=norm(prod[n]||0,minProd,maxProd); const sSla=norm(slaM[n]||0,minSla,maxSla); const sTempoInv=1-norm(tempoM[n]||0,minTempo,maxTempo); const sRevInv=1-norm(revM[n]||0,minRev,maxRev); const score=Math.round(((sProd*0.4)+(sSla*0.3)+(sTempoInv*0.2)+(sRevInv*0.1))*100); return { designer:n, score, sla:slaM[n]||0, retrab: revM[n]||0 } }).sort((a,b)=> b.score-a.score)
+    return list.slice(0,5)
+  })()
+  const heatmapHoras = (()=>{
+    const horas = Array.from({length:11},(_,i)=> i+8)
+    const per = {}
+    designers.forEach(d=> per[d]=horas.map(_=>0))
+    demandas.forEach(x=>{ if (x.startedAt) { try{ const dt=new Date(x.startedAt); const h=dt.getHours(); if(h>=8 && h<=18){ const d=x.designer||'—'; const idx=h-8; if(per[d]) per[d][idx]++ } }catch{} } })
+    return { horas, per }
+  })()
   return (
     <div className="dashboard">
-          <div className="widgets">
-            <div className="widget">
-              <div className="widget-title">KPIs principais</div>
-              <div className="widget-subtitle">Indicadores gerais do período selecionado</div>
-              <div className="kpi-grid">
-                {kpi.map(it=> (
-                  <div key={it.title} className="kpi fade-in">
-                    <div className="widget-title">{it.icon} {it.title}</div>
-                    <div className="kpi-value"><Counter value={it.value} /></div>
-                    <div className="kpi-trend">{pct(it.value)}% das demandas no período</div>
-                  </div>
-                ))}
-              </div>
-            </div>
+      <div className="exec-summary">
+        <div className="exec-title">RESUMO EXECUTIVO DO PERÍODO</div>
+        <div className="exec-grid">
+          <div className="exec-metric"><div className="exec-label">Produção total</div><div className="exec-value">{produTotal}</div></div>
+          <div className="exec-metric"><div className="exec-label">SLA geral</div><div className="exec-value" style={{color: slaGeralPct>=90?'#BCD200': slaGeralPct>=70?'#FFE55C':'#FF5E5E'}}>{slaGeralPct}%</div></div>
+          <div className="exec-metric"><div className="exec-label">% retrabalho</div><div className="exec-value">{retrabalhoPct}%</div></div>
+          <div className="exec-metric"><div className="exec-label">Backlog atual</div><div className="exec-value">{backlog}</div></div>
+          <div className="exec-metric"><div className="exec-label">Capacidade usada</div><div className="exec-value">{capacidadeUsadaPct}%</div><div className="progress"><div className="progress-fill" style={{width:`${capacidadeUsadaPct}%`, background:'#BCD200'}} /></div></div>
+        </div>
+      </div>
+      <div className="section-grid">
+        <div className="section-card">
+          <div className="widget-title">🔹 PRODUÇÃO</div>
+          <div className="badge-grid">
+            <div className="badge blue"><div>Criadas</div><div>{total}</div></div>
+            <div className="badge green"><div>Concluídas</div><div>{produTotal}</div></div>
+            <div className="badge yellow"><div>Em produção</div><div>{emProducao}</div></div>
+            <div className="badge"><div>Pendentes</div><div>{pendentes}</div></div>
           </div>
+        </div>
+        <div className="section-card">
+          <div className="widget-title">🔹 QUALIDADE</div>
+          <div className="badge-group">
+            <div className="badge purple"><div>Revisões</div><div>{revisoesTot}</div></div>
+            <div className="badge"><div>% Retrabalho</div><div>{retrabalhoPct}%</div></div>
+            <div className="badge green"><div>SLA</div><div>{slaGeralPct}%</div></div>
+          </div>
+        </div>
+        <div className="section-card">
+          <div className="widget-title">🔹 PESSOAS</div>
+          <table className="report-matrix">
+            <thead><tr><th>#</th><th>Designer</th><th>Score</th><th>SLA%</th><th>%Retrab</th></tr></thead>
+            <tbody>
+              {ranking.map((r,i)=> (<tr key={r.designer}><td>{i+1}</td><td>{r.designer}</td><td>{r.score}</td><td>{r.sla}%</td><td>{Math.round((r.retrab||0)*100)/100}</td></tr>))}
+            </tbody>
+          </table>
+        </div>
+        <div className="section-card">
+          <div className="widget-title">🔹 OPERAÇÃO</div>
+          <div className="section-divider" />
+          <table className="report-matrix">
+            <thead><tr><th>Designer</th><th>Capacidade ideal</th><th>Produção real</th><th>Capacidade usada</th><th>Status</th></tr></thead>
+            <tbody>
+              {workloadRows.map(r=> (<tr key={r.designer}><td>{r.designer}</td><td>{r.ideal}</td><td>{r.real}</td><td>{r.used}%</td><td style={{color:r.status==='Verde'?'#00C58E': r.status==='Amarelo'?'#FFE55C':'#FF5E5E'}}>{r.status}</td></tr>))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="section-grid">
+        <div className="section-card">
+          <div className="widget-title">HEATMAP DE PRODUTIVIDADE POR HORÁRIO</div>
+          <div className="heatmap">
+            <div className="heat-row" style={{gap:8,color:'var(--muted)'}}>
+              {heatmapHoras.horas.map(h=> (<div key={h} style={{width:32,textAlign:'center'}}>{String(h).padStart(2,'0')}h</div>))}
+            </div>
+            {designers.map(d=> (
+              <div key={d} className="heat-row" style={{alignItems:'center'}}>
+                <div className="chart-label" style={{width:120}}>{d}</div>
+                {heatmapHoras.horas.map((h,idx)=> { const v=(heatmapHoras.per[d]||[])[idx]||0; const color=v===0?'#222': v<2?'#4DA3FF33':'#4DA3FF'; return (<div key={h} className="heat-cell" style={{background:color,width:24,height:24}} title={`${d} ${String(h).padStart(2,'0')}h: ${v}`} />) })}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="section-card">
+          <div className="widget-title">LINHA DO TEMPO DE PRODUÇÃO MENSAL</div>
+          <div className="chips">
+            {conclPorDesigner.map(({designer,qty})=> (
+              <div key={designer} style={{display:'inline-flex',alignItems:'center',gap:6}}><span className="chip">{designer}</span><Sparkline series={[Math.max(1,qty-1), qty, qty+1]} color="#4DA3FF" /></div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -1018,6 +1144,8 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros }) {
   const periodLabel = ['Hoje','Semana','Mês','Mês passado']
   const keyOf = s => s==='Hoje'?'today': s==='Semana'?'week': s==='Mês'?'month':'lastmonth'
   const [period, setPeriod] = useState('month')
+  const [desA, setDesA] = useState(designers[0]||'')
+  const [desB, setDesB] = useState(designers[1]||'')
   useEffect(()=>{
     const d = new Date()
     const toYMD = x => { const p = n=>String(n).padStart(2,'0'); return `${x.getFullYear()}-${p(x.getMonth()+1)}-${p(x.getDate())}` }
@@ -1034,6 +1162,14 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros }) {
   },[period])
   const designersKeys = ['Todos', ...designers]
   const setDesigner = (v) => setFiltros(prev=> ({ ...prev, designer: v==='Todos'?'':v }))
+  const tiposKeys = ['Todos', ...Array.from(new Set(demandas.map(x=>x.tipoMidia).filter(Boolean)))]
+  const setTipo = (v) => setFiltros(prev=> ({ ...prev, tipoMidia: v==='Todos'?'':v }))
+  const canaisKeys = ['Todos', ...ORIGENS]
+  const setCanal = (v) => setFiltros(prev=> ({ ...prev, origem: v==='Todos'?'':v }))
+  const campanhasKeys = ['Todos', ...Array.from(new Set(demandas.map(x=>x.campanha).filter(Boolean)))]
+  const setCampanha = (v) => setFiltros(prev=> ({ ...prev, campanha: v==='Todos'?'':v }))
+  const statusKeys = ['Todos', ...FIXED_STATUS]
+  const setStatus = (v) => setFiltros(prev=> ({ ...prev, status: v==='Todos'?'':v }))
   const daysInPeriod = (()=>{
     const toD = s=>{ if(!s) return null; const [y,m,dd]=s.split('-').map(Number); return new Date(y,m-1,dd) }
     const s = toD(filtros.cIni), e = toD(filtros.cFim)
@@ -1043,101 +1179,39 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros }) {
   const concluidos = items.filter(x=> x.status==='Concluída')
   const pendentes = items.filter(x=> x.status==='Aberta')
   const emProducao = items.filter(x=> x.status==='Em Progresso')
-  const revisoesTot = demandas.reduce((acc,x)=> acc + (x.revisoes||0), 0)
+  const revisoesTot = items.reduce((acc,x)=> acc + (x.revisoes||0), 0)
   const produtividadeMedia = concluidos.length / daysInPeriod
-  const byDesigner = (arr) => {
-    const map = new Map()
-    arr.forEach(x=> map.set(x.designer||'—', (map.get(x.designer||'—')||0)+1))
-    return Array.from(map.entries()).map(([designer,qty])=>({designer,qty}))
-  }
-  const conclPorDesigner = byDesigner(concluidos)
-  const criadasPorDesigner = byDesigner(items)
-  const tempoEntregaStats = (()=>{
-    const diffDays = (a,b)=>{ const toD = s=>{ const [y,m,dd]=s.split('-').map(Number); return new Date(y,m-1,dd) }; if(!a||!b) return null; return Math.max(0, Math.round((toD(b)-toD(a))/86400000)) }
-    const per = {}
-    demandas.forEach(x=>{
-      if (x.dataConclusao) {
-        const d = x.designer||'—'
-        const t = diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)
-        if (t!=null) { const cur = per[d]||{ cnt:0, sum:0, min:9999, max:0 }; per[d]={ cnt:cur.cnt+1, sum:cur.sum+t, min:Math.min(cur.min,t), max:Math.max(cur.max,t) } }
-      }
-    })
-    return Object.entries(per).map(([designer,v])=> ({ designer, media: (v.sum/v.cnt)||0, min:v.min===9999?0:v.min, max:v.max }))
-  })()
-  const slaStats = (()=>{
-    const per = {}
-    demandas.forEach(x=>{
-      if (x.prazo && x.dataConclusao) {
-        const d = x.designer||'—'
-        const ok = x.dataConclusao <= x.prazo
-        const cur = per[d]||{ ok:0, total:0 }
-        per[d] = { ok: cur.ok + (ok?1:0), total: cur.total + 1 }
-      }
-    })
-    return Object.entries(per).map(([designer,v])=> ({ designer, pct: Math.round(((v.ok/(v.total||1))*100)), ok:v.ok, total:v.total }))
-  })()
-  const revisoesStats = (()=>{
-    const per = {}
-    items.forEach(x=>{
-      const d = x.designer||'—'
-      const r = x.revisoes||0
-      const cur = per[d]||{ rTot:0, cnt:0 }
-      per[d] = { rTot: cur.rTot + r, cnt: cur.cnt + 1 }
-    })
-    return Object.entries(per).map(([designer,v])=> ({ designer, total:v.rTot, porPeca: +(v.rTot/(v.cnt||1)).toFixed(2), percRetrab: Math.round(100 * ((v.rTot>0 ? 1 : 0))) }))
-  })()
-  const tiposDist = (()=>{
-    const per = {}
-    items.forEach(x=>{ const t=x.tipoMidia||'Outro'; per[t]=(per[t]||0)+1 })
-    const total = items.length||1
-    return Object.entries(per).map(([tipo,q])=> ({ tipo, q, pct: Math.round((q/total)*100) }))
-  })()
-  const workload = (()=>{
-    const capacity = 4
-    const per = {}
-    concluidos.forEach(x=>{ const d=x.designer||'—'; per[d]=(per[d]||0)+1 })
-    return Object.entries(per).map(([designer,q])=> ({ designer, ideal: capacity*daysInPeriod, real:q, status: q>capacity*daysInPeriod? 'Acima' : (q<capacity*daysInPeriod? 'Abaixo' : 'Dentro') }))
-  })()
-  const timeline = (()=>{
-    const d = new Date(); const monthStart = new Date(d.getFullYear(), d.getMonth(), 1); const days = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate()
-    const toIdx = s=>{ if(!s) return null; const [y,m,dd]=s.split('-').map(Number); const dt=new Date(y,m-1,dd); if(dt.getMonth()!==d.getMonth()||dt.getFullYear()!==d.getFullYear()) return null; return dt.getDate()-1 }
-    const per = {}
-    demandas.forEach(x=>{ const di = toIdx(x.dataCriacao||x.dataSolicitacao); if (di!=null) { const dname=x.designer||'—'; const arr = per[dname]||Array(days).fill(0); arr[di]++; per[dname]=arr } })
-    return per
-  })()
-  const heatmap = (()=>{
-    const byDayWeek = Array.from({length:7},()=>Array(6).fill(0))
-    items.forEach(x=>{ const toD=s=>{ if(!s) return null; const [y,m,dd]=s.split('-').map(Number); return new Date(y,m-1,dd) }; const dt = toD(x.dataCriacao||x.dataSolicitacao); if(!dt) return; const day = dt.getDay(); const week = Math.floor((dt.getDate()-1)/7); byDayWeek[day][week]++ })
-    return byDayWeek
-  })()
-  const ranking = (()=>{
-    const prod = conclPorDesigner.reduce((m,{designer,qty})=> (m[designer]=qty,m), {})
-    const slaM = slaStats.reduce((m,{designer,pct})=> (m[designer]=pct,m), {})
-    const tempoM = tempoEntregaStats.reduce((m,{designer,media})=> (m[designer]=media,m), {})
-    const revM = revisoesStats.reduce((m,{designer,porPeca})=> (m[designer]=porPeca,m), {})
-    const names = Array.from(new Set([...Object.keys(prod), ...Object.keys(slaM), ...Object.keys(tempoM), ...Object.keys(revM)])).filter(Boolean)
-    const norm = (val, min, max) => { if(max===min) return 1; return Math.max(0, Math.min(1, (val-min)/(max-min))) }
-    const maxProd = Math.max(...Object.values(prod||{_:-1}),0), minProd = Math.min(...Object.values(prod||{_:-1}),0)
-    const maxSla = 100, minSla = 0
-    const maxTempo = Math.max(...Object.values(tempoM||{_:-1}),0), minTempo = Math.min(...Object.values(tempoM||{_:-1}),0)
-    const maxRev = Math.max(...Object.values(revM||{_:-1}),0), minRev = Math.min(...Object.values(revM||{_:-1}),0)
-    const list = names.map(n=>{
-      const sProd = norm(prod[n]||0, minProd, maxProd)
-      const sSla = norm(slaM[n]||0, minSla, maxSla)
-      const sTempoInv = 1 - norm(tempoM[n]||0, minTempo, maxTempo)
-      const sRevInv = 1 - norm(revM[n]||0, minRev, maxRev)
-      const score = Math.round(((sProd*0.4)+(sSla*0.3)+(sTempoInv*0.2)+(sRevInv*0.1))*100)
-      return { designer:n, score }
-    }).sort((a,b)=> b.score - a.score)
-    return list
-  })()
-  const alerts = [
-    { icon:'⚠', text:'Designer com maior carga no período', val: conclPorDesigner.sort((a,b)=> b.qty-a.qty)[0]?.designer||'—' },
-    { icon:'⏳', text:'Designer com mais tarefas próximas do prazo', val: (()=>{ const near = demandas.filter(x=> x.prazo && x.status!=='Concluída'); const per={}; near.forEach(x=> per[x.designer||'—']=(per[x.designer||'—']||0)+1); return Object.entries(per).sort((a,b)=> b[1]-a[1])[0]?.[0]||'—' })() },
-    { icon:'🔁', text:'Designer com mais revisões', val: revisoesStats.sort((a,b)=> b.total-a.total)[0]?.designer||'—' },
-    { icon:'💤', text:'Designer com menor atividade', val: conclPorDesigner.sort((a,b)=> a.qty-b.qty)[0]?.designer||'—' },
-    { icon:'🚨', text:'Alertas de atraso repetidos', val: demandas.filter(x=> x.prazo && x.status!=='Concluída' && x.prazo < hojeISO()).length }
-  ]
+  const backlogItems = items.filter(x=> x.status!=='Concluída')
+  const diasRestantes = (p)=>{ if(!p) return null; const [y,m,d]=String(p).split('-').map(Number); const end=new Date(y,(m||1)-1,(d||1)); const start=new Date(); start.setHours(0,0,0,0); end.setHours(0,0,0,0); return Math.round((end - start)/86400000) }
+  const backlogRisco = backlogItems.filter(x=> { const dl=diasRestantes(x.prazo); return dl!=null && dl<=2 })
+  const prazoMedioBacklog = (()=>{ const arr=backlogItems.map(x=> diasRestantes(x.prazo)).filter(v=> v!=null); const avg = (arr.reduce((a,b)=>a+b,0)/(arr.length||1)); return +avg.toFixed(1) })()
+  const atrasoPct = (()=>{ const overdue = backlogItems.filter(x=> { const dl=diasRestantes(x.prazo); return dl!=null && dl<0 }).length; const total=backlogItems.length||1; return Math.round(100*(overdue/total)) })()
+  const estadoBacklog = atrasoPct>30 ? 'Acumulando atraso' : 'Saudável'
+  const diffDays = (a,b)=>{ const toD = s=>{ const [y,m,dd]=String(s).split('-').map(Number); return new Date(y,m-1,dd) }; if(!a||!b) return null; return Math.max(0, Math.round((toD(b)-toD(a))/86400000)) }
+  const leadTimes = concluidos.map(x=> diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null)
+  const leadTimeMedio = +((leadTimes.reduce((a,b)=>a+b,0)/(leadTimes.length||1)).toFixed(1))
+  const leadPorTipo = (()=>{ const per={}; concluidos.forEach(x=>{ const t=x.tipoMidia||'Outro'; const lt=diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao); if(lt!=null){ const cur=per[t]||{cnt:0,sum:0}; per[t]={ cnt:cur.cnt+1, sum:cur.sum+lt } } }); return Object.entries(per).map(([tipo,v])=> ({ tipo, media:+((v.sum/v.cnt).toFixed(1)) })) })()
+  const leadPorDesigner = (()=>{ const per={}; concluidos.forEach(x=>{ const d=x.designer||'—'; const lt=diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao); if(lt!=null){ const cur=per[d]||{cnt:0,sum:0}; per[d]={ cnt:cur.cnt+1, sum:cur.sum+lt } } }); return Object.entries(per).map(([designer,v])=> ({ designer, media:+((v.sum/v.cnt).toFixed(1)) })) })()
+  const mesAtual = new Date(); const mesPassado = new Date(mesAtual.getFullYear(), mesAtual.getMonth()-1, 1)
+  const inMonth = (iso, m)=>{ if(!iso) return false; const [y,mm,dd]=iso.split('-').map(Number); const dt=new Date(y,mm-1,dd); return dt.getMonth()===m.getMonth() && dt.getFullYear()===m.getFullYear() }
+  const ltMesAtual = concluidos.filter(x=> inMonth(x.dataConclusao, mesAtual)).map(x=> diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null)
+  const ltMesPassado = concluidos.filter(x=> inMonth(x.dataConclusao, mesPassado)).map(x=> diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null)
+  const compMesAtual = +((ltMesAtual.reduce((a,b)=>a+b,0)/(ltMesAtual.length||1)).toFixed(1))
+  const compMesPassado = +((ltMesPassado.reduce((a,b)=>a+b,0)/(ltMesPassado.length||1)).toFixed(1))
+  const ltDesigner = (name)=>{ const arr=concluidos.filter(x=> (x.designer||'')===name).map(x=> diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); return +((arr.reduce((a,b)=>a+b,0)/(arr.length||1)).toFixed(1)) }
+  const revDistrib = (()=>{ const arr=concluidos.map(x=> x.revisoes||0); const tot=arr.length||1; const z=(n)=> Math.round(100*((arr.filter(v=> v===n).length)/tot)); const g=(pred)=> Math.round(100*((arr.filter(pred).length)/tot)); return { sRev:z(0), umaRev:z(1), duasMais:g(v=> v>=2) } })()
+  const retrabalhoPorDesigner = (()=>{ const per={}; items.forEach(x=>{ const d=x.designer||'—'; const r=x.revisoes||0; const cur=per[d]||{ rTot:0, cnt:0 }; per[d]={ rTot:cur.rTot+r, cnt:cur.cnt+1 } }); return Object.entries(per).map(([designer,v])=> ({ designer, porPeca:+((v.rTot/(v.cnt||1)).toFixed(2)) })).sort((a,b)=> b.porPeca-a.porPeca) })()
+  const retrabalhoPorTipo = (()=>{ const per={}; items.forEach(x=>{ const t=x.tipoMidia||'Outro'; const r=x.revisoes||0; const cur=per[t]||{ rTot:0, cnt:0 }; per[t]={ rTot:cur.rTot+r, cnt:cur.cnt+1 } }); return Object.entries(per).map(([tipo,v])=> ({ tipo, porPeca:+((v.rTot/(v.cnt||1)).toFixed(2)) })).sort((a,b)=> b.porPeca-a.porPeca) })()
+  const porCanal = (()=>{ const per={}; items.forEach(x=>{ const o=x.origem||'Outros'; per[o]=(per[o]||0)+1 }); const total=items.length||1; return Object.entries(per).map(([origem,q])=> ({ origem, q, pct: Math.round(100*(q/total)) })) })()
+  const retrabPorCanal = (()=>{ const per={}; items.forEach(x=>{ const o=x.origem||'Outros'; const r=x.revisoes||0; const cur=per[o]||{ rTot:0, cnt:0 }; per[o]={ rTot:cur.rTot+r, cnt:cur.cnt+1 } }); return Object.entries(per).map(([origem,v])=> ({ origem, porPeca:+((v.rTot/(v.cnt||1)).toFixed(2)) })).sort((a,b)=> b.porPeca-a.porPeca) })()
+  const prodPorCanal = (()=>{ const per={}; concluidos.forEach(x=>{ const o=x.origem||'Outros'; per[o]=(per[o]||0)+1 }); return Object.entries(per).map(([origem,q])=> ({ origem, q })).sort((a,b)=> b.q-a.q) })()
+  const porHora = (()=>{ const per={}; concluidos.forEach(x=>{ const iso=x.finishedAt; if(!iso) return; const h=new Date(iso).getHours(); per[h]=(per[h]||0)+1 }); return per })()
+  const tempoMedioReal = (()=>{ const arr=concluidos.map(x=> Number(x.tempoProducaoMs||0)).filter(v=> v>0); const avgMs=(arr.reduce((a,b)=>a+b,0)/(arr.length||1)); const toH=(ms)=> (ms/3600000); return +(toH(avgMs).toFixed(2)) })()
+  const velocidadeRanking = (()=>{ const per={}; concluidos.forEach(x=>{ const d=x.designer||'—'; const ms=Number(x.tempoProducaoMs||0); const cur=per[d]||{ cnt:0, sum:0 }; per[d]={ cnt:cur.cnt+1, sum:cur.sum+ms } }); return Object.entries(per).map(([designer,v])=> ({ designer, horas: +((v.sum/(v.cnt||1)/3600000).toFixed(2)) })).sort((a,b)=> a.horas-b.horas) })()
+  const qualidadeRanking = retrabalhoPorDesigner.slice().sort((a,b)=> a.porPeca-b.porPeca)
+  const porCampanha = (()=>{ const per={}; items.forEach(x=>{ const c=x.campanha||'—'; per[c]=(per[c]||0)+1 }); return Object.entries(per).map(([campanha,q])=> ({ campanha, q })).sort((a,b)=> b.q-a.q) })()
+  const retrabCampanha = (()=>{ const per={}; items.forEach(x=>{ const c=x.campanha||'—'; const r=x.revisoes||0; const cur=per[c]||{ rTot:0, cnt:0 }; per[c]={ rTot:cur.rTot+r, cnt:cur.cnt+1 } }); return Object.entries(per).map(([campanha,v])=> ({ campanha, porPeca:+((v.rTot/(v.cnt||1)).toFixed(2)) })).sort((a,b)=> b.porPeca-a.porPeca) })()
+  const slaCampanha = (()=>{ const per={}; demandas.forEach(x=>{ if (x.campanha) { const c=x.campanha; const ok=!!(x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo); const cur=per[c]||{ ok:0, total:0 }; per[c]={ ok:cur.ok+(ok?1:0), total:cur.total+ (x.dataConclusao?1:0) } } }); return Object.entries(per).map(([campanha,v])=> ({ campanha, sla: Math.round(100*((v.ok/(v.total||1)))) })) })()
   return (
     <div className="reports">
       <div className="reports-toolbar">
@@ -1156,143 +1230,160 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros }) {
           {designersKeys.map(d=> (
             <button key={d} className={`btn-md ${((filtros.designer||'')===d || (d==='Todos' && !filtros.designer))?'active':''}`} onClick={()=> setDesigner(d)}><span className="icon">👤</span><span>{d}</span></button>
           ))}
+          {tiposKeys.map(t=> (
+            <button key={t} className={`btn-md ${((filtros.tipoMidia||'')===t || (t==='Todos' && !filtros.tipoMidia))?'active':''}`} onClick={()=> setTipo(t)}><span className="icon">🎨</span><span>{t}</span></button>
+          ))}
+          {canaisKeys.map(c=> (
+            <button key={c} className={`btn-md ${((filtros.origem||'')===c || (c==='Todos' && !filtros.origem))?'active':''}`} onClick={()=> setCanal(c)}><span className="icon">🔗</span><span>{c}</span></button>
+          ))}
+          {campanhasKeys.map(c=> (
+            <button key={c} className={`btn-md ${((filtros.campanha||'')===c || (c==='Todos' && !filtros.campanha))?'active':''}`} onClick={()=> setCampanha(c)}><span className="icon">🏷</span><span>{c}</span></button>
+          ))}
+          {statusKeys.map(s=> (
+            <button key={s} className={`btn-md ${((filtros.status||'')===s || (s==='Todos' && !filtros.status))?'active':''}`} onClick={()=> setStatus(s)}><span className="icon">●</span><span>{s}</span></button>
+          ))}
         </div>
-      </div>
-      <div className="metrics-grid">
-        {[
-          { icon:'🏁', label:'Concluídas no período', val: concluidos.length },
-          { icon:'📅', label:'Criadas no período', val: items.length },
-          { icon:'📌', label:'Pendentes', val: pendentes.length },
-          { icon:'🟡', label:'Em produção', val: emProducao.length },
-          { icon:'🔁', label:'Revisões realizadas', val: revisoesTot },
-          { icon:'⚡', label:'Produtividade média (peças/dia)', val: +produtividadeMedia.toFixed(1) },
-        ].map(m=> (
-          <div key={m.label} className="metric-card">
-            <div className="metric-title">{m.icon} {m.label}</div>
-            <div className="metric-value">{m.val}</div>
-            <Sparkline series={[m.val/2, m.val*0.8, m.val]} color="#4DA3FF" />
-          </div>
-        ))}
       </div>
       <div className="reports-grid">
         <div className="report-card">
-          <div className="report-title">Produtividade por designer</div>
-          {conclPorDesigner.map(({designer,qty})=> (
-            <div key={designer} className="chart-row"><div className="chart-label">{designer}</div><div className="chart-bar"><div className="chart-fill" style={{width:`${Math.round(100*qty/Math.max(1,Math.max(...conclPorDesigner.map(x=>x.qty))))}%`, background:'#4DA3FF'}} /><div className="chart-value">{qty}</div></div></div>
-          ))}
-          <div className="section-divider" />
-          <table>
-            <thead><tr><th>Designer</th><th>Criadas</th><th>Concluídas</th><th>% Conclusão</th></tr></thead>
-            <tbody>
-              {designers.map(d=>{ const cr = (criadasPorDesigner.find(x=>x.designer===d)?.qty)||0; const co = (conclPorDesigner.find(x=>x.designer===d)?.qty)||0; const pc = Math.round(100*(co/Math.max(1,cr))); return (<tr key={d}><td>{d}</td><td>{cr}</td><td>{co}</td><td>{pc}%</td></tr>) })}
-            </tbody>
-          </table>
-        </div>
-        <div className="report-card">
-          <div className="report-title">Tempo médio de entrega (por designer)</div>
-          {tempoEntregaStats.map(({designer,media})=> (
-            <div key={designer} className="chart-row"><div className="chart-label">{designer}</div><div className="chart-bar"><div className="chart-fill" style={{width:`${Math.round(100*media/Math.max(1,Math.max(...tempoEntregaStats.map(x=>x.media))))}%`, background:'#A66BFF'}} /><div className="chart-value">{media.toFixed(1)}d</div></div></div>
-          ))}
-          <div className="section-divider" />
-          <table>
-            <thead><tr><th>Designer</th><th>Tempo médio</th><th>Tempo mín</th><th>Tempo máx</th></tr></thead>
-            <tbody>
-              {tempoEntregaStats.map(r=> (<tr key={r.designer}><td>{r.designer}</td><td>{r.media.toFixed(1)}d</td><td>{r.min}d</td><td>{r.max}d</td></tr>))}
-            </tbody>
-          </table>
-        </div>
-        <div className="report-card">
-          <div className="report-title">SLA de entrega</div>
-          {(()=>{ const ok = slaStats.reduce((a,x)=> a+x.ok,0); const total = slaStats.reduce((a,x)=> a+x.total,0); const pct = Math.round(100*(ok/Math.max(1,total))); const r=40; const c=2*Math.PI*r; const off = c*(1 - pct/100); return (
-            <svg width="160" height="120"><g transform="translate(20,20)"><circle cx="60" cy="40" r={r} stroke="#222" strokeWidth="10" fill="none" /><circle cx="60" cy="40" r={r} stroke="#00C58E" strokeWidth="10" fill="none" strokeDasharray={`${c} ${c}`} strokeDashoffset={off} /><text x="60" y="46" textAnchor="middle" fill="#fff">{pct}%</text></g></svg>
-          ) })()}
-          <div className="section-divider" />
-          <table>
-            <thead><tr><th>Designer</th><th>SLA%</th><th>Dentro</th><th>Fora</th></tr></thead>
-            <tbody>
-              {slaStats.map(r=> (<tr key={r.designer}><td>{r.designer}</td><td style={{color: r.pct>=90?'#BCD200': r.pct>=70?'#FFE55C':'#FF5E5E'}}>{r.pct}%</td><td>{r.ok}</td><td>{r.total-r.ok}</td></tr>))}
-            </tbody>
-          </table>
-        </div>
-        <div className="report-card">
-          <div className="report-title">Revisões / retrabalho</div>
-          {revisoesStats.map(({designer,total})=> (
-            <div key={designer} className="chart-row"><div className="chart-label">{designer}</div><div className="chart-bar"><div className="chart-fill" style={{width:`${Math.round(100*total/Math.max(1,Math.max(...revisoesStats.map(x=>x.total))))}%`, background:'#FF6A88'}} /><div className="chart-value">{total}</div></div></div>
-          ))}
-          <div className="section-divider" />
-          <table>
-            <thead><tr><th>Designer</th><th>Revisões totais</th><th>Revisões/peça</th><th>% retrabalho</th></tr></thead>
-            <tbody>
-              {revisoesStats.map(r=> (<tr key={r.designer}><td>{r.designer}</td><td>{r.total}</td><td>{r.porPeca}</td><td>{r.percRetrab}%</td></tr>))}
-            </tbody>
-          </table>
-        </div>
-        <div className="report-card">
-          <div className="report-title">Tipos de peça</div>
-          <div className="section-divider" />
-          <table>
-            <thead><tr><th>Tipo</th><th>Qtd</th><th>%</th></tr></thead>
-            <tbody>
-              {tiposDist.map(t=> (<tr key={t.tipo}><td>{t.tipo}</td><td>{t.q}</td><td>{t.pct}%</td></tr>))}
-            </tbody>
-          </table>
-        </div>
-        <div className="report-card">
-          <div className="report-title">Workload (capacidade × produção)</div>
-          {workload.map(r=> (
-            <div key={r.designer} className="chart-row"><div className="chart-label">{r.designer}</div><div className="chart-bar"><div className="chart-fill" style={{width:`${Math.round(100*r.real/Math.max(1,r.ideal))}%`, background: r.status==='Dentro'?'#BCD200': r.status==='Acima'?'#FF5E5E':'#FFE55C'}} /><div className="chart-value">{r.real}/{r.ideal}</div></div></div>
-          ))}
-          <div className="section-divider" />
-          <table>
-            <thead><tr><th>Designer</th><th>Capacidade ideal</th><th>Produção real</th><th>Status</th></tr></thead>
-            <tbody>
-              {workload.map(r=> (<tr key={r.designer}><td>{r.designer}</td><td>{r.ideal}</td><td>{r.real}</td><td>{r.status}</td></tr>))}
-            </tbody>
-          </table>
-        </div>
-        <div className="report-card">
-          <div className="report-title">Linha do tempo mensal</div>
+          <div className="report-title">Relatório de Backlog</div>
           <div className="chips">
-            {Object.entries(timeline).map(([designer,series])=> (
-              <div key={designer} style={{display:'inline-flex',alignItems:'center',gap:6}}><span className="chip">{designer}</span><Sparkline series={series} color={designer==='Thiago'?'#4DA3FF': designer==='Felipe'?'#00C58E':'#A66BFF'} /></div>
-            ))}
+            <span className="chip">Backlog total: {backlogItems.length}</span>
+            <span className="chip">Em risco (≤48h): {backlogRisco.length}</span>
+            <span className="chip">Prazo médio: {prazoMedioBacklog}d</span>
+            <span className="chip">Estado: {estadoBacklog}</span>
+          </div>
+          <div className="section-divider" />
+          <table className="report-matrix">
+            <thead><tr><th>Tipo</th><th>Qtd</th></tr></thead>
+            <tbody>
+              {Object.entries(backlogItems.reduce((m,x)=>{ const t=x.tipoMidia||'Outro'; m[t]=(m[t]||0)+1; return m },{})).map(([tipo,q])=> (<tr key={tipo}><td>{tipo}</td><td>{q}</td></tr>))}
+            </tbody>
+          </table>
+          <div className="section-divider" />
+          <table className="report-matrix">
+            <thead><tr><th>Designer</th><th>Qtd</th></tr></thead>
+            <tbody>
+              {Object.entries(backlogItems.reduce((m,x)=>{ const d=x.designer||'—'; m[d]=(m[d]||0)+1; return m },{})).map(([designer,q])=> (<tr key={designer}><td>{designer}</td><td>{q}</td></tr>))}
+            </tbody>
+          </table>
+        </div>
+        <div className="report-card">
+          <div className="report-title">Relatório de Lead Time</div>
+          <div className="chips">
+            <span className="chip">Médio geral: {leadTimeMedio}d</span>
+            <span className="chip">Este mês: {compMesAtual}d</span>
+            <span className="chip">Mês passado: {compMesPassado}d</span>
+          </div>
+          <div className="section-divider" />
+          <table className="report-matrix">
+            <thead><tr><th>Tipo</th><th>Lead Time médio</th></tr></thead>
+            <tbody>
+              {leadPorTipo.map(r=> (<tr key={r.tipo}><td>{r.tipo}</td><td>{r.media}d</td></tr>))}
+            </tbody>
+          </table>
+          <div className="section-divider" />
+          <table className="report-matrix">
+            <thead><tr><th>Designer</th><th>Lead Time médio</th></tr></thead>
+            <tbody>
+              {leadPorDesigner.map(r=> (<tr key={r.designer}><td>{r.designer}</td><td>{r.media}d</td></tr>))}
+            </tbody>
+          </table>
+          <div className="section-divider" />
+          <div className="chips">
+            <span className="chip">Designer A</span>
+            <select value={desA} onChange={e=> setDesA(e.target.value)}>{designers.map(d=> <option key={d} value={d}>{d}</option>)}</select>
+            <span className="chip">Designer B</span>
+            <select value={desB} onChange={e=> setDesB(e.target.value)}>{designers.map(d=> <option key={d} value={d}>{d}</option>)}</select>
+            <span className="chip">A: {ltDesigner(desA)}d</span>
+            <span className="chip">B: {ltDesigner(desB)}d</span>
           </div>
         </div>
         <div className="report-card">
-          <div className="report-title">Heatmap de produtividade</div>
+          <div className="report-title">Eficiência e Retrabalho</div>
+          <div className="chips">
+            <span className="chip">Sem revisão: {revDistrib.sRev}%</span>
+            <span className="chip">1 revisão: {revDistrib.umaRev}%</span>
+            <span className="chip">2+ revisões: {revDistrib.duasMais}%</span>
+          </div>
+          <div className="section-divider" />
+          <table className="report-matrix">
+            <thead><tr><th>Designer</th><th>Revisões/peça</th></tr></thead>
+            <tbody>
+              {retrabalhoPorDesigner.map(r=> (<tr key={r.designer}><td>{r.designer}</td><td>{r.porPeca}</td></tr>))}
+            </tbody>
+          </table>
+          <div className="section-divider" />
+          <table className="report-matrix">
+            <thead><tr><th>Tipo</th><th>Revisões/peça</th></tr></thead>
+            <tbody>
+              {retrabalhoPorTipo.map(r=> (<tr key={r.tipo}><td>{r.tipo}</td><td>{r.porPeca}</td></tr>))}
+            </tbody>
+          </table>
+        </div>
+        <div className="report-card">
+          <div className="report-title">Demanda por Canal</div>
+          <div className="chips">
+            {porCanal.map(c=> (<span key={c.origem} className="chip">{c.origem}: {c.pct}%</span>))}
+          </div>
+          <div className="section-divider" />
+          <table className="report-matrix">
+            <thead><tr><th>Canal</th><th>Revisões/peça</th></tr></thead>
+            <tbody>
+              {retrabPorCanal.map(c=> (<tr key={c.origem}><td>{c.origem}</td><td>{c.porPeca}</td></tr>))}
+            </tbody>
+          </table>
+          <div className="section-divider" />
+          <table className="report-matrix">
+            <thead><tr><th>Canal</th><th>Concluídas</th></tr></thead>
+            <tbody>
+              {prodPorCanal.map(c=> (<tr key={c.origem}><td>{c.origem}</td><td>{c.q}</td></tr>))}
+            </tbody>
+          </table>
+        </div>
+        <div className="report-card">
+          <div className="report-title">Produtividade por Hora (Avançado)</div>
+          <div className="chips">
+            <span className="chip">Tempo médio real/peça: {tempoMedioReal}h</span>
+          </div>
+          <div className="section-divider" />
           <div className="heatmap">
-            {heatmap.map((row,ri)=> (
-              <div key={ri} className="heat-row">
-                {row.map((v,ci)=> { const color = v===0?'#222': v<2?'#4DA3FF33':'#4DA3FF'; return (<div key={ci} className="heat-cell" style={{background:color}} title={`D${ri} W${ci}: ${v}`} />) })}
-              </div>
-            ))}
+            <div className="heat-row" style={{gap:8,color:'var(--muted)'}}>
+              {Array.from({length:11},(_,i)=> i+8).map(h=> (<div key={h} style={{width:32,textAlign:'center'}}>{String(h).padStart(2,'0')}h</div>))}
+            </div>
+            <div className="heat-row">
+              {Array.from({length:11},(_,i)=> i+8).map(h=> { const v=porHora[h]||0; const color=v===0?'#222': v<2?'#00C58E33':'#00C58E'; return (<div key={h} className="heat-cell" style={{background:color}} title={`${String(h).padStart(2,'0')}h: ${v}`} />) })}
+            </div>
           </div>
-        </div>
-        <div className="report-card">
-          <div className="report-title">Ranking dos designers</div>
-          <table>
-            <thead><tr><th>#</th><th>Designer</th><th>Score</th></tr></thead>
+          <div className="section-divider" />
+          <table className="report-matrix">
+            <thead><tr><th>#</th><th>Designer</th><th>Velocidade média (h)</th></tr></thead>
             <tbody>
-              {ranking.map((r,i)=> (<tr key={r.designer}><td>{i+1}</td><td>{r.designer}</td><td>{r.score}/100</td></tr>))}
+              {velocidadeRanking.map((r,i)=> (<tr key={r.designer}><td>{i+1}</td><td>{r.designer}</td><td>{r.horas}</td></tr>))}
+            </tbody>
+          </table>
+          <div className="section-divider" />
+          <table className="report-matrix">
+            <thead><tr><th>#</th><th>Designer</th><th>Qualidade (menos retrabalho)</th></tr></thead>
+            <tbody>
+              {qualidadeRanking.map((r,i)=> (<tr key={r.designer}><td>{i+1}</td><td>{r.designer}</td><td>{r.porPeca}</td></tr>))}
             </tbody>
           </table>
         </div>
         <div className="report-card">
-          <div className="report-title">Alertas automáticos</div>
-          <div className="today-list">
-            {alerts.map(a=> (
-              <div key={a.text} className="today-item"><div className="today-name">{a.icon} {a.text}</div><div className="today-meta">{a.val}</div></div>
-            ))}
-          </div>
-        </div>
-        <div className="report-card">
-          <div className="report-title">Resumo geral do período</div>
+          <div className="report-title">Relatório de Campanhas</div>
           <div className="chips">
-            <span className="chip">Total criado: {items.length}</span>
-            <span className="chip">Total concluído: {concluidos.length}</span>
-            <span className="chip">Melhor designer: {ranking[0]?.designer||'—'}</span>
-            <span className="chip">Tipo mais produzido: {tiposDist.sort((a,b)=> b.q-a.q)[0]?.tipo||'—'}</span>
+            <span className="chip">Mais demandada: {porCampanha[0]?.campanha||'—'}</span>
+            <span className="chip">Maior retrabalho: {retrabCampanha[0]?.campanha||'—'}</span>
+            <span className="chip">Melhor SLA: {slaCampanha.sort((a,b)=> b.sla-a.sla)[0]?.campanha||'—'}</span>
           </div>
+          <div className="section-divider" />
+          <table className="report-matrix">
+            <thead><tr><th>Campanha</th><th>Produção (concluídas)</th><th>SLA%</th><th>Retrabalho/peça</th></tr></thead>
+            <tbody>
+              {Array.from(new Set(items.map(x=> x.campanha).filter(Boolean))).map(c=> { const prod=concluidos.filter(x=> x.campanha===c).length; const sla=slaCampanha.find(x=> x.campanha===c)?.sla||0; const ret=retrabCampanha.find(x=> x.campanha===c)?.porPeca||0; return (<tr key={c}><td>{c}</td><td>{prod}</td><td style={{color:sla>=90?'#BCD200': sla>=70?'#FFE55C':'#FF5E5E'}}>{sla}%</td><td>{ret}</td></tr>) })}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
