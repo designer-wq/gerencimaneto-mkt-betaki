@@ -768,6 +768,15 @@ export default function App() {
     setModalOpen(false)
   }
 
+  const onResetSystem = async () => {
+    if (!window.confirm('Confirmar: apagar TODAS as demandas e limpar relatórios?')) return
+    const toDelete = apiEnabled ? [...demandas] : []
+    setDemandas([])
+    if (apiEnabled && toDelete.length) {
+      try { await Promise.all(toDelete.map(x=> api.deleteDemanda(x.id))) } catch {}
+    }
+  }
+
   
 
   return (
@@ -802,7 +811,7 @@ export default function App() {
             </>
           )}
           {route==='config' && (
-            <ConfigView themeVars={themeVars} setThemeVars={setThemeVars} />
+            <ConfigView themeVars={themeVars} setThemeVars={setThemeVars} onReset={onResetSystem} />
           )}
           {route==='cadastros' && (
             <CadastrosView cadStatus={cadStatus} setCadStatus={setCadStatus} cadTipos={cadTipos} setCadTipos={setCadTipos} cadDesigners={cadDesigners} setCadDesigners={setCadDesigners} cadPlataformas={cadPlataformas} setCadPlataformas={setCadPlataformas} cadStatusColors={cadStatusColors} setCadStatusColors={setCadStatusColors} />
@@ -835,7 +844,7 @@ function Sidebar({ route, setRoute }) {
  
 
 
-function ConfigView({ themeVars, setThemeVars }) {
+function ConfigView({ themeVars, setThemeVars, onReset }) {
   const [localVars, setLocalVars] = useState(themeVars||{})
   const [novoNome, setNovoNome] = useState('')
   const [novoValor, setNovoValor] = useState('')
@@ -932,6 +941,7 @@ function ConfigView({ themeVars, setThemeVars }) {
         </div>
       </div>
       <div className="modal-footer">
+        <button className="danger" type="button" onClick={onReset}>Resetar sistema</button>
         <button className="primary" type="button" onClick={reset}>Restaurar padrão</button>
       </div>
     </div>
