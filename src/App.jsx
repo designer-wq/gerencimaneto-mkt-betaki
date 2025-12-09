@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { db } from './firebase'
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
+import { collection, addDoc, serverTimestamp, getDocs, deleteDoc, doc } from 'firebase/firestore'
 import { apiEnabled, api } from './api'
 const readLS = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)||'null'); return Array.isArray(v) ? v : def } catch { return def } }
 const readObj = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)||'null'); return v && typeof v === 'object' && !Array.isArray(v) ? v : def } catch { return def } }
@@ -752,8 +752,7 @@ export default function App() {
     } else {
       const hoje = hojeISO()
       const inicial = { tipo:'status', autor:'Você', data: hoje, de: '', para: 'Aberta' }
-      const moverProd = { tipo:'status', autor:'Você', data: hoje, de: 'Aberta', para: 'Em Progresso' }
-      const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: [], historico: [moverProd, inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: hoje, status: 'Em Progresso', prazo, tempoProducaoMs: 0, startedAt: new Date().toISOString(), finishedAt: null, revisoes: 0 }
+      const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: hoje, status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null, finishedAt: null, revisoes: 0 }
       if (apiEnabled) {
         const saved = await api.createDemanda(novo)
         setDemandas(prev=> [...prev, { ...novo, id: saved?.id ?? proxId(prev) }])
@@ -772,8 +771,17 @@ export default function App() {
     if (!window.confirm('Confirmar: apagar TODAS as demandas e limpar relatórios?')) return
     const toDelete = apiEnabled ? [...demandas] : []
     setDemandas([])
+    try { localStorage.removeItem('demandas') } catch {}
     if (apiEnabled && toDelete.length) {
       try { await Promise.all(toDelete.map(x=> api.deleteDemanda(x.id))) } catch {}
+    }
+    if (db) {
+      try {
+        const snap = await getDocs(collection(db, 'demandas'))
+        const tasks = []
+        snap.forEach(docSnap=> tasks.push(deleteDoc(doc(db, 'demandas', docSnap.id))))
+        if (tasks.length) await Promise.all(tasks)
+      } catch {}
     }
   }
 
