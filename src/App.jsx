@@ -426,7 +426,6 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
     setNovoComentario('')
     setHistorico(initial?.historico || [])
   },[initial, open, cadDesigners, cadTipos, cadPlataformas])
-  if (!open) return null
   const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios, historico }) }
   const addComentario = () => { const v = novoComentario.trim(); if (!v) return; const c = { texto: v, data: hojeISO() }; setComentarios(prev=> [c, ...prev]); setHistorico(prev=> [{ tipo:'comentario', autor:'Você', data: c.data, texto: v }, ...prev]); setNovoComentario('') }
   const fmtDT = (s)=>{ if(!s) return ''; try{ return new Date(s).toLocaleString('pt-BR',{ day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) }catch{return s} }
@@ -439,6 +438,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
   const [fallbackStart] = useState(()=> (!startedAtMs && isProdNow) ? Date.now() : null)
   const effectiveStart = startedAtMs ?? fallbackStart
   const totalMs = baseMs + (effectiveStart ? Math.max(0, nowTs - effectiveStart) : 0)
+  if (!open) return null
   return (
     <div className="modal">
       <div className={`modal-dialog ${mode!=='create'?'tall':''}`} onClick={e=>e.stopPropagation()}>
