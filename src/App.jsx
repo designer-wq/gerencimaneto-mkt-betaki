@@ -446,7 +446,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
           {mode==='create' ? (
             <div className="title">➕ Nova demanda</div>
           ) : (
-            <input className="title-input" value={titulo} onChange={e=>setTitulo(e.target.value)} placeholder="Título da demanda" />
+            <div className="title editable" contentEditable suppressContentEditableWarning onInput={e=> setTitulo(e.currentTarget.textContent || '')}>{titulo || 'Sem título'}</div>
           )}
           <button className="icon" onClick={onClose}>✕</button>
         </div>
