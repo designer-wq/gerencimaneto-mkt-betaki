@@ -203,8 +203,8 @@ function aplicarFiltros(items, f) {
     if (f.status && it.status !== f.status) return false
     if (f.tipoMidia && it.tipoMidia !== f.tipoMidia) return false
     if (f.plataforma && (it.plataforma||'') !== f.plataforma) return false
-    if (f.cIni && it.dataCriacao < f.cIni) return false
-    if (f.cFim && it.dataCriacao > f.cFim) return false
+    if (f.cIni && it.dataCriacao && it.dataCriacao < f.cIni) return false
+    if (f.cFim && it.dataCriacao && it.dataCriacao > f.cFim) return false
     if (f.sIni && it.dataSolicitacao < f.sIni) return false
     if (f.sFim && it.dataSolicitacao > f.sFim) return false
     return true
@@ -217,7 +217,7 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
   const pad = n => String(n).padStart(2,'0')
   const isoWeek = d => { const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const dayNum = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() + 4 - dayNum); const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1)); const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1)/7); return `${date.getUTCFullYear()}-W${pad(weekNo)}` }
   const thisWeek = isoWeek(new Date())
-  const diffDays = (a,b)=>{ const toD=s=>{ if(!s) return null; const [y,m,dd]=String(s).split('-').map(Number); return new Date(y,m-1,dd) }; const da=toD(a), db=toD(b); if(!da||!db) return ''; return Math.round((db - da)/86400000) }
+  const daysLeft = (p)=>{ if(!p) return ''; const [y,m,d]=String(p).split('-').map(Number); const end=new Date(y,(m||1)-1,(d||1)); const start=new Date(); start.setHours(0,0,0,0); end.setHours(0,0,0,0); return Math.round((end - start)/86400000) }
   const fmtDM = (s)=>{ if(!s) return ''; const [y,m,d]=String(s).split('-').map(Number); const dd=String(d).padStart(2,'0'); const ab=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][Math.max(0,Math.min(11,(m-1)||0))]; return `${dd}.${ab}` }
   return (
     <div className={`table ${compact?'compact':''}`}>
@@ -250,7 +250,7 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
               </td>
               <td>{fmtDM(it.dataSolicitacao)}</td>
               <td>{fmtDM(it.dataCriacao)}</td>
-              <td>{diffDays(it.dataCriacao, it.prazo)}</td>
+              <td>{daysLeft(it.prazo)}</td>
               <td>{it.tipoMidia}</td>
               <td>{it.plataforma || ''}</td>
               <td>{it.link ? <a href={it.link} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}>Visualizar</a> : ''}</td>
@@ -401,7 +401,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
   const [titulo, setTitulo] = useState(initial?.titulo || '')
   const [link, setLink] = useState(initial?.link || '')
   const [arquivoNome, setArquivoNome] = useState('')
-  const [dataSolic, setDataSolic] = useState(initial?.dataSolicitacao || '')
+  const [dataSolic, setDataSolic] = useState(initial?.dataSolicitacao || hojeISO())
   const [plataforma, setPlataforma] = useState(initial?.plataforma || '')
   const [arquivos, setArquivos] = useState(initial?.arquivos || [])
   const [dataCriacao, setDataCriacao] = useState(initial?.dataCriacao || '')
@@ -409,13 +409,14 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
   const [prazo, setPrazo] = useState(initial?.prazo || '')
   const [comentarios, setComentarios] = useState(initial?.comentarios || [])
   const [novoComentario, setNovoComentario] = useState('')
+  const [historico, setHistorico] = useState(initial?.historico || [])
   useEffect(()=>{
     setDesigner(initial?.designer || '')
     setTipoMidia(initial?.tipoMidia || 'Post')
     setTitulo(initial?.titulo || '')
     setLink(initial?.link || '')
     setArquivoNome('')
-    setDataSolic(initial?.dataSolicitacao || '')
+    setDataSolic(initial?.dataSolicitacao ?? (mode==='create' ? hojeISO() : ''))
     setPlataforma(initial?.plataforma || (cadPlataformas?.[0] || ''))
     setArquivos(initial?.arquivos || [])
     setDataCriacao(initial?.dataCriacao || '')
@@ -423,21 +424,24 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
     setPrazo(initial?.prazo || '')
     setComentarios(initial?.comentarios || [])
     setNovoComentario('')
+    setHistorico(initial?.historico || [])
   },[initial, open, cadDesigners, cadTipos, cadPlataformas])
   if (!open) return null
-  const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios }) }
-  const addComentario = () => { const v = novoComentario.trim(); if (!v) return; const c = { texto: v, data: hojeISO() }; setComentarios(prev=> [c, ...prev]); setNovoComentario('') }
+  const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios, historico }) }
+  const addComentario = () => { const v = novoComentario.trim(); if (!v) return; const c = { texto: v, data: hojeISO() }; setComentarios(prev=> [c, ...prev]); setHistorico(prev=> [{ tipo:'comentario', autor:'Você', data: c.data, texto: v }, ...prev]); setNovoComentario('') }
+  const fmtDT = (s)=>{ if(!s) return ''; try{ return new Date(s).toLocaleString('pt-BR',{ day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) }catch{return s} }
   return (
     <div className="modal" onClick={mode==='create'? undefined : onClose}>
-      <div className="modal-dialog" onClick={e=>e.stopPropagation()}>
+      <div className={`modal-dialog ${mode!=='create'?'tall':''}`} onClick={e=>e.stopPropagation()}>
         <div className="modal-header">
           <div className="title">{mode==='create'? '➕ Nova demanda' : '✏️ Editar demanda'}</div>
           <button className="icon" onClick={onClose}>✕</button>
         </div>
-        <form className="modal-body" onSubmit={submit}>
-          <div className="modal-columns">
+        <div className={`status-bar ${statusClass(initial?.status || 'Aberta')}`}>{initial?.status || 'Aberta'}</div>
+        <form id="modalForm" className="modal-body" onSubmit={submit}>
+          <div className={`modal-columns ${mode==='create'?'single':'cols3'}`}>
             <div className="modal-main">
-              <div className="form-grid">
+              <div className={mode==='create'?"form-grid":"form-stack"}>
               <div className="form-row"><label>Designer</label>
                 <select value={designer} onChange={e=>setDesigner(e.target.value)} required>
                   <option value="">Designer</option>
@@ -455,46 +459,90 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
                 </select>
               </div>
               <div className="form-row"><label>Link</label><input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://" /></div>
-              <div className="form-row"><label>Arquivo</label>
-                <input type="file" multiple accept="image/*" onChange={e=>{
-                  const files = Array.from(e.target.files||[]).slice(0,5)
-                  const readers = files.map(f => new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve({ name: f.name, url: r.result }); r.readAsDataURL(f) }))
-                  Promise.all(readers).then(arr => setArquivos(arr))
-                }} />
-              </div>
+              {mode==='create' ? (
+                <div className="row-2">
+                  <div className="form-row"><label>Arquivo</label>
+                    <input type="file" multiple accept="image/*" onChange={e=>{
+                      const files = Array.from(e.target.files||[]).slice(0,5)
+                      const readers = files.map(f => new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve({ name: f.name, url: r.result }); r.readAsDataURL(f) }))
+                      Promise.all(readers).then(arr => { setArquivos(arr); setHistorico(prev=> [{ tipo:'arquivo', autor:'Você', data: hojeISO(), arquivos: arr }, ...prev]) })
+                    }} />
+                  </div>
+                  <div className="form-row"><label>Prazo</label><input type="date" value={prazo} onChange={e=>setPrazo(e.target.value)} /></div>
+                </div>
+              ) : (
+                <div className="form-row"><label>Arquivo</label>
+                  <input type="file" multiple accept="image/*" onChange={e=>{
+                    const files = Array.from(e.target.files||[]).slice(0,5)
+                    const readers = files.map(f => new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve({ name: f.name, url: r.result }); r.readAsDataURL(f) }))
+                    Promise.all(readers).then(arr => { setArquivos(arr); setHistorico(prev=> [{ tipo:'arquivo', autor:'Você', data: hojeISO(), arquivos: arr }, ...prev]) })
+                  }} />
+                </div>
+              )}
               
-              <div className="form-row"><label>Data de Solicitação</label><input type="date" value={dataSolic} onChange={e=>setDataSolic(e.target.value)} required /></div>
-              <div className="form-row"><label>Data de Criação</label><input type="date" value={dataCriacao} onChange={e=>setDataCriacao(e.target.value)} required /></div>
-              <div className="form-row"><label>Prazo</label><input type="date" value={prazo} onChange={e=>setPrazo(e.target.value)} /></div>
+              
               </div>
-              <div className="form-row"><label>Descrição</label><textarea rows={6} value={descricao} onChange={e=>setDescricao(e.target.value)} /></div>
-              <div className="modal-footer">
-                {mode==='edit' && <button className="danger" type="button" onClick={()=>{ if (window.confirm('Confirmar exclusão desta demanda?')) { onDelete(initial.id); onClose() } }}>Excluir</button>}
-                <button className="primary" type="submit">Salvar</button>
-              </div>
+              {mode==='create' && (
+                <div className="form-row"><label>Descrição</label><textarea rows={8} className="desc-input" value={descricao} onChange={e=>{ setDescricao(e.target.value); try{ e.target.style.height='auto'; e.target.style.height=(e.target.scrollHeight)+'px' }catch{} }} /></div>
+              )}
+              
             </div>
-            <div className="modal-side">
+            {mode!=='create' && (
+              <div className="modal-center">
+                <div className="date-row">
+                  <div className="form-row"><label>Data de Solicitação</label><input type="date" value={dataSolic} disabled /></div>
+                  <div className="form-row"><label>Data de Criação</label><input type="date" value={dataCriacao} disabled /></div>
+                  <div className="form-row"><label>Prazo</label><input type="date" value={prazo} onChange={e=>setPrazo(e.target.value)} /></div>
+                </div>
+                <div className="form-row"><label>Descrição</label><textarea rows={12} className="desc-input" value={descricao} onChange={e=>{ setDescricao(e.target.value); try{ e.target.style.height='auto'; e.target.style.height=(e.target.scrollHeight)+'px' }catch{} }} /></div>
+              </div>
+            )}
+            {mode!=='create' && (
+              <div className="modal-side">
               <div className="activity">
                 <div className="form-row"><label>Comentários e atividade</label>
                   <input placeholder="Escrever um comentário..." value={novoComentario} onChange={e=>setNovoComentario(e.target.value)} />
-                  <div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}>
-                    <button className="primary" type="button" onClick={addComentario}>Adicionar</button>
-                  </div>
+                  {novoComentario.trim().length>0 && (
+                    <div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}>
+                      <button className="primary" type="button" onClick={addComentario}>Adicionar</button>
+                    </div>
+                  )}
                 </div>
                 <div className="activity-list">
-                  {comentarios.length===0 ? <div className="empty">Sem comentários</div> : (
-                    comentarios.map((c,i)=> (
+                  {(historico||[]).length===0 ? <div className="empty">Sem atividade</div> : (
+                    (historico||[]).map((ev,i)=> (
                       <div key={i} className="activity-item">
-                        <div className="activity-meta">{c.data}</div>
-                        <div className="activity-text">{c.texto}</div>
+                        <div className="activity-entry">
+                          <div className="avatar">V</div>
+                          <div className="entry-content">
+                            <div className="entry-title">
+                              {ev.tipo==='status' && (<span>Você moveu este cartão de {ev.de||''} para {ev.para||''}</span>)}
+                              {ev.tipo==='comentario' && (<span><strong>Você</strong> comentou: {ev.texto}</span>)}
+                              {ev.tipo==='arquivo' && (<span>Você anexou {Array.isArray(ev.arquivos)?ev.arquivos.length:1} arquivo(s)</span>)}
+                            </div>
+                            <div className="entry-time">{fmtDT(ev.data)}</div>
+                            {ev.tipo==='arquivo' && Array.isArray(ev.arquivos) && (
+                              <div className="thumbs">
+                                {ev.arquivos.map((f)=> (
+                                  <img key={f.name} className="file-thumb" src={f.url} alt={f.name} />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     ))
                   )}
                 </div>
               </div>
-            </div>
+              </div>
+            )}
           </div>
         </form>
+        <div className="modal-actions">
+          {mode==='edit' && <button className="danger" type="button" onClick={()=>{ if (window.confirm('Confirmar exclusão desta demanda?')) { onDelete(initial.id); onClose() } }}>Excluir</button>}
+          <button className="primary" type="submit" form="modalForm">Salvar</button>
+        </div>
       </div>
     </div>
   )
@@ -617,24 +665,28 @@ export default function App() {
       const revisoes = changed && isRev ? (x.revisoes||0)+1 : (x.revisoes||0)
       const isDone = String(status||'').toLowerCase().includes('concluida') || status==='Concluída'
       const dataConclusao = isDone ? (x.dataConclusao||today) : x.dataConclusao
-      return { ...x, status, revisoes, dataConclusao }
+      const dataCriacao = isDone ? (x.dataCriacao||today) : x.dataCriacao
+      const histItem = changed ? { tipo:'status', autor:'Você', data: today, de: x.status, para: status } : null
+      const historico = histItem ? [histItem, ...(x.historico||[])] : (x.historico||[])
+      return { ...x, status, revisoes, dataConclusao, dataCriacao, historico }
     }))
     if (apiEnabled) {
       const found = demandas.find(x=>x.id===id)
-      if (found) await api.updateDemanda(id, { ...found, status, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0) })
+      if (found) await api.updateDemanda(id, { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: [{ tipo:'status', autor:'Você', data: today, de: found.status, para: status }, ...(found.historico||[]) ] })
     }
   }
   const onDelete = async (id) => {
     setDemandas(prev=> prev.filter(x=> x.id!==id))
     if (apiEnabled) await api.deleteDemanda(id)
   }
-  const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios }) => {
+  const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios, historico }) => {
     if (modalMode==='edit' && editing) {
-      const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, comentarios: comentarios ?? editing.comentarios, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, plataforma, prazo }
+      const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, comentarios: comentarios ?? editing.comentarios, historico: historico ?? editing.historico, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, plataforma, prazo }
       setDemandas(prev=> prev.map(x=> x.id===editing.id ? updated : x))
       if (apiEnabled) await api.updateDemanda(editing.id, updated)
     } else {
-      const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: comentarios||[], arquivos: (arquivos||[]), arquivoNome, plataforma, dataSolicitacao: dataSolic, dataCriacao: dataCriacao, status: 'Aberta', prazo }
+      const inicial = { tipo:'status', autor:'Você', data: hojeISO(), de: '', para: 'Aberta' }
+      const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, dataSolicitacao: dataSolic, dataCriacao: '', status: 'Aberta', prazo }
       if (apiEnabled) {
         const saved = await api.createDemanda(novo)
         setDemandas(prev=> [...prev, { ...novo, id: saved?.id ?? proxId(prev) }])
@@ -656,11 +708,23 @@ export default function App() {
       <Sidebar route={route} setRoute={setRoute} />
       <div className="content">
         <div className="app">
-          <Header onNew={onNew} view={view} setView={setView} showNew={route==='demandas'} />
+          <Header onNew={onNew} view={view} setView={setView} showNew={false} />
           {route==='demandas' && (
-            <FilterBar filtros={filtros} setFiltros={setFiltros} designers={designers} />
+            <div className="demandas-layout">
+              <div className="sidebar-col">
+                <FilterBar filtros={filtros} setFiltros={setFiltros} designers={designers} showSearch={false} />
+              </div>
+              <div className="content-col">
+                <div className="top-search">
+                  <input className="search" placeholder="Pesquisar demandas..." value={filtros.q||''} onChange={e=> setFiltros(prev=> ({ ...prev, q: e.target.value }))} />
+                  <button className="primary" onClick={onNew}>Nova demanda</button>
+                </div>
+                <div className="table-scroll">
+                  <TableView items={itemsSorted.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsSorted.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsSorted.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsSorted.length)} total={itemsSorted.length} compact={compact} />
+                </div>
+              </div>
+            </div>
           )}
-          {route==='demandas' && <TableView items={itemsSorted.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsSorted.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsSorted.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsSorted.length)} total={itemsSorted.length} compact={compact} />}
           {route==='demandas' && (
             <>
           <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} cadDesigners={cadDesigners} cadPlataformas={cadPlataformas} onDelete={onDelete} />
@@ -802,7 +866,7 @@ function ConfigView({ themeVars, setThemeVars }) {
     </div>
   )
 }
-function FilterBar({ filtros, setFiltros, designers }) {
+function FilterBar({ filtros, setFiltros, designers, showSearch }) {
   const [period, setPeriod] = useState('today')
   useEffect(()=>{
     const d = new Date()
@@ -813,11 +877,11 @@ function FilterBar({ filtros, setFiltros, designers }) {
     const endOfMonth = new Date(d.getFullYear(), d.getMonth()+1, 0)
     const startOfLastMonth = new Date(d.getFullYear(), d.getMonth()-1, 1)
     const endOfLastMonth = new Date(d.getFullYear(), d.getMonth(), 0)
-    if (period==='today') setFiltros(prev=>({ ...prev, cIni: toYMD(d), cFim: toYMD(d) }))
-    if (period==='week') { const s=startOfISOWeek(d), e=endOfISOWeek(d); setFiltros(prev=>({ ...prev, cIni: toYMD(s), cFim: toYMD(e) })) }
-    if (period==='month') setFiltros(prev=>({ ...prev, cIni: toYMD(startOfMonth), cFim: toYMD(endOfMonth) }))
-    if (period==='lastmonth') setFiltros(prev=>({ ...prev, cIni: toYMD(startOfLastMonth), cFim: toYMD(endOfLastMonth) }))
-    if (period==='last30') { const s = new Date(d); s.setDate(s.getDate()-29); setFiltros(prev=>({ ...prev, cIni: toYMD(s), cFim: toYMD(d) })) }
+    if (period==='today') setFiltros(prev=>({ ...prev, sIni: toYMD(d), sFim: toYMD(d), cIni:'', cFim:'' }))
+    if (period==='week') { const s=startOfISOWeek(d), e=endOfISOWeek(d); setFiltros(prev=>({ ...prev, sIni: toYMD(s), sFim: toYMD(e), cIni:'', cFim:'' })) }
+    if (period==='month') setFiltros(prev=>({ ...prev, sIni: toYMD(startOfMonth), sFim: toYMD(endOfMonth), cIni:'', cFim:'' }))
+    if (period==='lastmonth') setFiltros(prev=>({ ...prev, sIni: toYMD(startOfLastMonth), sFim: toYMD(endOfLastMonth), cIni:'', cFim:'' }))
+    if (period==='last30') { const s = new Date(d); s.setDate(s.getDate()-29); setFiltros(prev=>({ ...prev, sIni: toYMD(s), sFim: toYMD(d), cIni:'', cFim:'' })) }
   },[period])
   const setDesigner = (v) => setFiltros(prev=> ({ ...prev, designer: v==='Todos'?'':v }))
   const list = ['Hoje','Semana','Mês','Mês passado','Últimos 30 dias']
@@ -825,9 +889,11 @@ function FilterBar({ filtros, setFiltros, designers }) {
   const designersKeys = ['Todos', ...designers]
   return (
     <div className="filterbar">
-      <div className="seg" style={{flex:1, minWidth:220}}>
-        <input className="search" placeholder="Pesquisar demandas..." value={filtros.q||''} onChange={e=> setFiltros(prev=> ({ ...prev, q: e.target.value }))} />
-      </div>
+      {showSearch!==false && (
+        <div className="seg" style={{flex:1, minWidth:220}}>
+          <input className="search" placeholder="Pesquisar demandas..." value={filtros.q||''} onChange={e=> setFiltros(prev=> ({ ...prev, q: e.target.value }))} />
+        </div>
+      )}
       <div className="filters-row">
         <div className="seg">
           <div className="filter-title">Período</div>
