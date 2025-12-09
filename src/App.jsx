@@ -407,6 +407,8 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
   const [dataCriacao, setDataCriacao] = useState(initial?.dataCriacao || '')
   const [descricao, setDescricao] = useState(initial?.descricao || '')
   const [prazo, setPrazo] = useState(initial?.prazo || '')
+  const [comentarios, setComentarios] = useState(initial?.comentarios || [])
+  const [novoComentario, setNovoComentario] = useState('')
   useEffect(()=>{
     setDesigner(initial?.designer || '')
     setTipoMidia(initial?.tipoMidia || 'Post')
@@ -419,9 +421,12 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
     setDataCriacao(initial?.dataCriacao || '')
     setDescricao(initial?.descricao || '')
     setPrazo(initial?.prazo || '')
+    setComentarios(initial?.comentarios || [])
+    setNovoComentario('')
   },[initial, open, cadDesigners, cadTipos, cadPlataformas])
   if (!open) return null
-  const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo }) }
+  const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios }) }
+  const addComentario = () => { const v = novoComentario.trim(); if (!v) return; const c = { texto: v, data: hojeISO() }; setComentarios(prev=> [c, ...prev]); setNovoComentario('') }
   return (
     <div className="modal" onClick={mode==='create'? undefined : onClose}>
       <div className="modal-dialog" onClick={e=>e.stopPropagation()}>
@@ -430,40 +435,64 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
           <button className="icon" onClick={onClose}>✕</button>
         </div>
         <form className="modal-body" onSubmit={submit}>
-          <div className="form-grid">
-            <div className="form-row"><label>Designer</label>
-              <select value={designer} onChange={e=>setDesigner(e.target.value)} required>
-                <option value="">Designer</option>
-                {(cadDesigners||[]).map(d=> <option key={d} value={d}>{d}</option>)}
-              </select>
+          <div className="modal-columns">
+            <div className="modal-main">
+              <div className="form-grid">
+              <div className="form-row"><label>Designer</label>
+                <select value={designer} onChange={e=>setDesigner(e.target.value)} required>
+                  <option value="">Designer</option>
+                  {(cadDesigners||[]).map(d=> <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+              <div className="form-row"><label>Tipo</label><select value={tipoMidia} onChange={e=>setTipoMidia(e.target.value)}>
+                {(cadTipos||['Post','Story','Banner','Vídeo','Outro']).map(t=> <option key={t} value={t}>{t}</option>)}
+              </select></div>
+              <div className="form-row"><label>Titulo</label><input value={titulo} onChange={e=>setTitulo(e.target.value)} required /></div>
+              <div className="form-row"><label>Plataforma</label>
+                <select value={plataforma} onChange={e=>setPlataforma(e.target.value)}>
+                  <option value="">Plataforma</option>
+                  {(cadPlataformas||[]).map(p=> <option key={p} value={p}>{p}</option>)}
+                </select>
+              </div>
+              <div className="form-row"><label>Link</label><input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://" /></div>
+              <div className="form-row"><label>Arquivo</label>
+                <input type="file" multiple accept="image/*" onChange={e=>{
+                  const files = Array.from(e.target.files||[]).slice(0,5)
+                  const readers = files.map(f => new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve({ name: f.name, url: r.result }); r.readAsDataURL(f) }))
+                  Promise.all(readers).then(arr => setArquivos(arr))
+                }} />
+              </div>
+              
+              <div className="form-row"><label>Data de Solicitação</label><input type="date" value={dataSolic} onChange={e=>setDataSolic(e.target.value)} required /></div>
+              <div className="form-row"><label>Data de Criação</label><input type="date" value={dataCriacao} onChange={e=>setDataCriacao(e.target.value)} required /></div>
+              <div className="form-row"><label>Prazo</label><input type="date" value={prazo} onChange={e=>setPrazo(e.target.value)} /></div>
+              </div>
+              <div className="form-row"><label>Descrição</label><textarea rows={6} value={descricao} onChange={e=>setDescricao(e.target.value)} /></div>
+              <div className="modal-footer">
+                {mode==='edit' && <button className="danger" type="button" onClick={()=>{ if (window.confirm('Confirmar exclusão desta demanda?')) { onDelete(initial.id); onClose() } }}>Excluir</button>}
+                <button className="primary" type="submit">Salvar</button>
+              </div>
             </div>
-            <div className="form-row"><label>Tipo</label><select value={tipoMidia} onChange={e=>setTipoMidia(e.target.value)}>
-              {(cadTipos||['Post','Story','Banner','Vídeo','Outro']).map(t=> <option key={t} value={t}>{t}</option>)}
-            </select></div>
-            <div className="form-row"><label>Titulo</label><input value={titulo} onChange={e=>setTitulo(e.target.value)} required /></div>
-            <div className="form-row"><label>Plataforma</label>
-              <select value={plataforma} onChange={e=>setPlataforma(e.target.value)}>
-                <option value="">Plataforma</option>
-                {(cadPlataformas||[]).map(p=> <option key={p} value={p}>{p}</option>)}
-              </select>
+            <div className="modal-side">
+              <div className="activity">
+                <div className="form-row"><label>Comentários e atividade</label>
+                  <input placeholder="Escrever um comentário..." value={novoComentario} onChange={e=>setNovoComentario(e.target.value)} />
+                  <div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}>
+                    <button className="primary" type="button" onClick={addComentario}>Adicionar</button>
+                  </div>
+                </div>
+                <div className="activity-list">
+                  {comentarios.length===0 ? <div className="empty">Sem comentários</div> : (
+                    comentarios.map((c,i)=> (
+                      <div key={i} className="activity-item">
+                        <div className="activity-meta">{c.data}</div>
+                        <div className="activity-text">{c.texto}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="form-row"><label>Link</label><input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://" /></div>
-            <div className="form-row"><label>Arquivo</label>
-              <input type="file" multiple accept="image/*" onChange={e=>{
-                const files = Array.from(e.target.files||[]).slice(0,5)
-                const readers = files.map(f => new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve({ name: f.name, url: r.result }); r.readAsDataURL(f) }))
-                Promise.all(readers).then(arr => setArquivos(arr))
-              }} />
-            </div>
-            
-            <div className="form-row"><label>Data de Solicitação</label><input type="date" value={dataSolic} onChange={e=>setDataSolic(e.target.value)} required /></div>
-            <div className="form-row"><label>Data de Criação</label><input type="date" value={dataCriacao} onChange={e=>setDataCriacao(e.target.value)} required /></div>
-            <div className="form-row"><label>Prazo</label><input type="date" value={prazo} onChange={e=>setPrazo(e.target.value)} /></div>
-          </div>
-          <div className="form-row"><label>Descrição</label><textarea rows={3} value={descricao} onChange={e=>setDescricao(e.target.value)} /></div>
-          <div className="modal-footer">
-            {mode==='edit' && <button className="danger" type="button" onClick={()=>{ if (window.confirm('Confirmar exclusão desta demanda?')) { onDelete(initial.id); onClose() } }}>Excluir</button>}
-            <button className="primary" type="submit">Salvar</button>
           </div>
         </form>
       </div>
@@ -599,13 +628,13 @@ export default function App() {
     setDemandas(prev=> prev.filter(x=> x.id!==id))
     if (apiEnabled) await api.deleteDemanda(id)
   }
-  const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo }) => {
+  const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios }) => {
     if (modalMode==='edit' && editing) {
-      const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, plataforma, prazo }
+      const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, comentarios: comentarios ?? editing.comentarios, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, plataforma, prazo }
       setDemandas(prev=> prev.map(x=> x.id===editing.id ? updated : x))
       if (apiEnabled) await api.updateDemanda(editing.id, updated)
     } else {
-      const novo = { designer, tipoMidia, titulo, link, descricao, arquivos: (arquivos||[]), arquivoNome, plataforma, dataSolicitacao: dataSolic, dataCriacao: dataCriacao, status: 'Aberta', prazo }
+      const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: comentarios||[], arquivos: (arquivos||[]), arquivoNome, plataforma, dataSolicitacao: dataSolic, dataCriacao: dataCriacao, status: 'Aberta', prazo }
       if (apiEnabled) {
         const saved = await api.createDemanda(novo)
         setDemandas(prev=> [...prev, { ...novo, id: saved?.id ?? proxId(prev) }])

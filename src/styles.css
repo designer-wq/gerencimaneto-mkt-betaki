@@ -112,9 +112,16 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',system-
 .card .acts .icon + .icon{margin-left:8px}
 
 .modal{position:fixed;inset:0;background:rgba(17,24,39,.6);display:flex;align-items:center;justify-content:center;z-index:1000}
-.modal-dialog{width:520px;max-width:95vw;background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow, 0 10px 30px rgba(0,0,0,.15));z-index:1001}
+.modal-dialog{width:920px;max-width:95vw;background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow, 0 10px 30px rgba(0,0,0,.15));z-index:1001}
 .modal-header{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--border)}
 .modal-body{padding:12px;display:flex;flex-direction:column;gap:10px}
+.modal-columns{display:grid;grid-template-columns:1.5fr 1fr;gap:16px}
+.modal-main{display:flex;flex-direction:column;gap:12px}
+.modal-side{display:flex;flex-direction:column;gap:12px}
+.activity-list{display:flex;flex-direction:column;gap:10px;max-height:50vh;overflow:auto;padding-right:6px}
+.activity-item{border:1px solid var(--border);border-radius:8px;padding:8px;background:#0b0e12}
+.activity-meta{font-size:12px;color:var(--muted);margin-bottom:4px}
+.activity-text{font-size:13px;color:var(--text)}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .form-grid .form-row{margin:0}
 .form-row{display:flex;flex-direction:column;gap:6px}
