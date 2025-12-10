@@ -1,10 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { db } from './firebase'
+import { db, isFirebaseEnabled } from './firebase'
 import { collection, addDoc, serverTimestamp, getDocs, deleteDoc, doc } from 'firebase/firestore'
+import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth'
 import { apiEnabled, api } from './api'
 const readLS = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)||'null'); return Array.isArray(v) ? v : def } catch { return def } }
 const readObj = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)||'null'); return v && typeof v === 'object' && !Array.isArray(v) ? v : def } catch { return def } }
 const writeLS = (k, v) => localStorage.setItem(k, JSON.stringify(v))
+const readUsers = () => { try { return JSON.parse(localStorage.getItem('users')||'[]') } catch { return [] } }
+const writeUsers = (arr) => localStorage.setItem('users', JSON.stringify(arr))
+const ensureAdminSeed = () => {
+  const list = readUsers()
+  if (!list.find(u=> u.username==='admin')) {
+    const admin = { username:'admin', name:'Administrador', role:'admin', password:'f3l1p3' }
+    writeUsers([...list, admin])
+  }
+}
 
 const ESTADOS = ["Aberta", "Em Progresso", "Concluída"]
 const FIXED_STATUS = ["Pendente","Em produção","Aguardando Feedback","Aprovada","Revisar","Concluida"]
@@ -93,14 +103,20 @@ function Sparkline({ series, color='#BCD200' }) {
   )
 }
 
-function Header({ onNew, view, setView, showNew }) {
+function Header({ onNew, view, setView, showNew, user, onLogout }) {
   return (
     <div className="topbar">
       <div className="topbar-left">
         <div className="team">Equipe de Marketing</div>
       </div>
       <div className="topbar-right">
-        {showNew && <button className="primary" onClick={onNew}>Nova Demanda</button>}
+        {user ? (
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <span className="chip">{user.name||user.username}</span>
+            <button className="primary" onClick={onLogout}>⎋ Sair</button>
+            <button className="primary" onClick={onNew}>Nova Demanda</button>
+          </div>
+        ) : null}
       </div>
     </div>
   )
@@ -131,6 +147,32 @@ function ViewButtonsInner({ view, setView }) {
       <button className={`tab-btn ${view==='table'?'active':''}`} onClick={()=>setView('table')}><span className="icon">▦</span><span>Table</span></button>
       <button className={`tab-btn ${view==='board'?'active':''}`} onClick={()=>setView('board')}><span className="icon">🗂</span><span>Board</span></button>
       <button className={`tab-btn ${view==='calendar'?'active':''}`} onClick={()=>setView('calendar')}><span className="icon">🗓</span><span>Calendar</span></button>
+    </div>
+  )
+}
+
+function LoginView({ onLogin }) {
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const submit = async (e)=>{ e.preventDefault(); await onLogin(username, password) }
+  return (
+    <div className="login-wrap">
+      <div className="login-banner">BANNER TELA LOGIN</div>
+      <div className="login-card">
+        <div className="login-title">Gerenciamento Mkt!</div>
+        <form onSubmit={submit} className="login-form">
+          <div className="input-with-icon">
+            <input className="login-input" placeholder="Usuário" value={username} onChange={e=>setUsername(e.target.value)} required />
+            <span className="input-icon">👤</span>
+          </div>
+          <div className="input-with-icon">
+            <input className="login-input" type="password" placeholder="Insira sua senha" value={password} onChange={e=>setPassword(e.target.value)} required />
+            <span className="input-icon">👁️</span>
+          </div>
+          <div className="login-links"><a href="#" onClick={e=>e.preventDefault()}>Esqueceu sua senha?</a></div>
+          <button className="primary btn-lg" type="submit">Entrar</button>
+        </form>
+      </div>
     </div>
   )
 }
@@ -231,7 +273,7 @@ function aplicarFiltros(items, f) {
   })
 }
 
-function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, hasMore, showMore, canCollapse, showLess, shown, total, compact }) {
+function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, hasMore, showMore, canCollapse, showLess, shown, total, compact, canEdit }) {
   const [menuOpen, setMenuOpen] = useState(null)
   const toggleMenu = (id) => setMenuOpen(prev => prev===id ? null : id)
   const pad = n => String(n).padStart(2,'0')
@@ -264,7 +306,7 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
                 <div>{it.designer}</div>
               </td>
               <td>
-                <select className={`status-select ${statusClass(it.status)}`} value={it.status} onChange={e=>onStatus(it.id, e.target.value)} onClick={e=>e.stopPropagation()}>
+                <select className={`status-select ${statusClass(it.status)}`} value={it.status} onChange={e=>onStatus(it.id, e.target.value)} onClick={e=>e.stopPropagation()} disabled={!canEdit}>
                   {FIXED_STATUS.map(s=> <option key={s} value={s}>{statusWithDot(s)}</option>)}
                 </select>
               </td>
@@ -415,7 +457,7 @@ function CalendarView({ items, refDate }) {
   )
 }
 
-function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners, cadPlataformas, onDelete }) {
+function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners, cadPlataformas, onDelete, userLabel }) {
   const [designer, setDesigner] = useState(initial?.designer || '')
   const [tipoMidia, setTipoMidia] = useState(initial?.tipoMidia || 'Post')
   const [titulo, setTitulo] = useState(initial?.titulo || '')
@@ -451,7 +493,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
     setCampanha(initial?.campanha || '')
   },[initial, open, cadDesigners, cadTipos, cadPlataformas])
   const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) }
-  const addComentario = () => { const v = novoComentario.trim(); if (!v) return; const c = { texto: v, data: hojeISO() }; setComentarios(prev=> [c, ...prev]); setHistorico(prev=> [{ tipo:'comentario', autor:'Você', data: c.data, texto: v }, ...prev]); setNovoComentario('') }
+  const addComentario = () => { const v = novoComentario.trim(); if (!v) return; const c = { texto: v, data: hojeISO() }; setComentarios(prev=> [c, ...prev]); setHistorico(prev=> [{ tipo:'comentario', autor:userLabel, data: c.data, texto: v }, ...prev]); setNovoComentario('') }
   const fmtDT = (s)=>{ if(!s) return ''; try{ return new Date(s).toLocaleString('pt-BR',{ day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) }catch{return s} }
   const [nowTs, setNowTs] = useState(Date.now())
   useEffect(()=>{ const id = setInterval(()=> setNowTs(Date.now()), 1000); return ()=> clearInterval(id) },[])
@@ -516,7 +558,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
                     <input type="file" multiple accept="image/*" onChange={e=>{
                       const files = Array.from(e.target.files||[]).slice(0,5)
                       const readers = files.map(f => new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve({ name: f.name, url: r.result }); r.readAsDataURL(f) }))
-                      Promise.all(readers).then(arr => { setArquivos(arr); setHistorico(prev=> [{ tipo:'arquivo', autor:'Você', data: hojeISO(), arquivos: arr }, ...prev]) })
+                      Promise.all(readers).then(arr => { setArquivos(arr); setHistorico(prev=> [{ tipo:'arquivo', autor:userLabel, data: hojeISO(), arquivos: arr }, ...prev]) })
                     }} />
                   </div>
                   <div className="form-row"><label>Prazo</label><input type="date" value={prazo} onChange={e=>setPrazo(e.target.value)} /></div>
@@ -526,7 +568,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
                   <input type="file" multiple accept="image/*" onChange={e=>{
                     const files = Array.from(e.target.files||[]).slice(0,5)
                     const readers = files.map(f => new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve({ name: f.name, url: r.result }); r.readAsDataURL(f) }))
-                    Promise.all(readers).then(arr => { setArquivos(arr); setHistorico(prev=> [{ tipo:'arquivo', autor:'Você', data: hojeISO(), arquivos: arr }, ...prev]) })
+                    Promise.all(readers).then(arr => { setArquivos(arr); setHistorico(prev=> [{ tipo:'arquivo', autor:userLabel, data: hojeISO(), arquivos: arr }, ...prev]) })
                   }} />
                 </div>
               )}
@@ -567,9 +609,9 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
                           <div className="avatar">V</div>
                           <div className="entry-content">
                             <div className="entry-title">
-                              {ev.tipo==='status' && (<span>Você moveu este cartão de {ev.de||''} para {ev.para||''}</span>)}
-                              {ev.tipo==='comentario' && (<span><strong>Você</strong> comentou: {ev.texto}</span>)}
-                              {ev.tipo==='arquivo' && (<span>Você anexou {Array.isArray(ev.arquivos)?ev.arquivos.length:1} arquivo(s)</span>)}
+                              {ev.tipo==='status' && (<span>{ev.autor||'—'} moveu este cartão de {ev.de||''} para {ev.para||''}</span>)}
+                              {ev.tipo==='comentario' && (<span><strong>{ev.autor||'—'}</strong> comentou: {ev.texto}</span>)}
+                              {ev.tipo==='arquivo' && (<span>{ev.autor||'—'} anexou {Array.isArray(ev.arquivos)?ev.arquivos.length:1} arquivo(s)</span>)}
                             </div>
                             <div className="entry-time">{fmtDT(ev.data)}</div>
                             {ev.tipo==='arquivo' && Array.isArray(ev.arquivos) && (
@@ -648,6 +690,7 @@ function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadDesi
 }
 
 export default function App() {
+  const [user, setUser] = useState(null)
   const [demandas, setDemandas] = useState(ler())
   const [view, setView] = useState('table')
   const [compact, setCompact] = useState(false)
@@ -673,6 +716,13 @@ export default function App() {
   }), [items])
   const [tableLimit, setTableLimit] = useState(10)
   const [calRef, setCalRef] = useState(new Date())
+  const userLabel = useMemo(()=> user?.name || user?.username || 'Você', [user])
+  const role = user?.role||'comum'
+  const allowedRoutes = useMemo(()=>{
+    if (role==='admin') return ['dashboard','demandas','config','cadastros','relatorios','usuarios']
+    if (role==='gerente') return ['dashboard','demandas','cadastros','relatorios','usuarios']
+    return ['demandas','cadastros']
+  },[role])
 
   useEffect(()=>{ gravar(demandas) },[demandas])
   useEffect(()=>{ writeLS('cadStatus', cadStatus) },[cadStatus])
@@ -680,6 +730,11 @@ export default function App() {
   useEffect(()=>{ writeLS('cadDesigners', cadDesigners) },[cadDesigners])
   useEffect(()=>{ writeLS('cadPlataformas', cadPlataformas) },[cadPlataformas])
   useEffect(()=>{ writeLS('cadStatusColors', cadStatusColors) },[cadStatusColors])
+  useEffect(()=>{
+    ensureAdminSeed()
+    const saved = readObj('localUser', null)
+    if (saved) setUser(saved)
+  },[])
   useEffect(()=>{
     Object.entries(themeVars||{}).forEach(([k,v])=>{
       try { document.documentElement.style.setProperty(`--${k}`, v) } catch {}
@@ -695,9 +750,24 @@ export default function App() {
       api.listCadastros('plataformas').then(arr=> Array.isArray(arr) && setCadPlataformas(arr))
     }
   },[])
+  useEffect(()=>{
+    if (user && !allowedRoutes.includes(route)) {
+      setRoute(allowedRoutes[0])
+    }
+    if (!user && route!=='dashboard' && route!=='demandas' && route!=='config' && route!=='cadastros' && route!=='relatorios' && route!=='usuarios') {
+      setRoute('dashboard')
+    }
+  },[user, allowedRoutes, route])
 
-  const onNew = ()=>{ setModalMode('create'); setEditing(null); setModalOpen(true) }
-  const onEdit = it => { setModalMode('edit'); setEditing(it); setModalOpen(true) }
+  const logout = async ()=>{ try { localStorage.removeItem('localUser') } catch {} setUser(null) }
+  const login = async (username, password) => {
+    const list = readUsers()
+    const found = list.find(u=> u.username===username && u.password===password)
+    if (found) { const u={ username:found.username, name: found.name||found.username, role: found.role||'comum' }; writeLS('localUser', u); setUser(u) }
+  }
+
+  const onNew = ()=>{ if (!user) return; setModalMode('create'); setEditing(null); setModalOpen(true) }
+  const onEdit = it => { if (!user) return; setModalMode('edit'); setEditing(it); setModalOpen(true) }
   const onDuplicate = async (it) => {
     const base = { ...it, id: undefined, status: 'Aberta', dataSolicitacao: hojeISO(), dataCriacao: hojeISO() }
     if (apiEnabled) {
@@ -735,13 +805,13 @@ export default function App() {
       const dataConclusao = isDone ? (x.dataConclusao||today) : x.dataConclusao
       const dataCriacao = isDone ? (x.dataCriacao||today) : x.dataCriacao
       if (changed && isDone) finishedAt = new Date(nowMs).toISOString()
-      const histItem = changed ? { tipo:'status', autor:'Você', data: today, de: x.status, para: status } : null
+      const histItem = changed ? { tipo:'status', autor: userLabel, data: today, de: x.status, para: status } : null
       const historico = histItem ? [histItem, ...(x.historico||[])] : (x.historico||[])
       return { ...x, status, revisoes, dataConclusao, dataCriacao, historico, tempoProducaoMs, startedAt, finishedAt }
     }))
     if (apiEnabled) {
       const found = demandas.find(x=>x.id===id)
-      if (found) await api.updateDemanda(id, { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: [{ tipo:'status', autor:'Você', data: today, de: found.status, para: status }, ...(found.historico||[]) ], tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.finishedAt })
+      if (found) await api.updateDemanda(id, { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: [{ tipo:'status', autor: userLabel, data: today, de: found.status, para: status }, ...(found.historico||[]) ], tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.finishedAt })
     }
   }
   const onDelete = async (id) => {
@@ -755,8 +825,8 @@ export default function App() {
       if (apiEnabled) await api.updateDemanda(editing.id, updated)
     } else {
       const hoje = hojeISO()
-      const inicial = { tipo:'status', autor:'Você', data: hoje, de: '', para: 'Aberta' }
-      const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: hoje, status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null, finishedAt: null, revisoes: 0 }
+      const inicial = { tipo:'status', autor: userLabel, data: hoje, de: '', para: 'Aberta' }
+      const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: hoje, status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null, finishedAt: null, revisoes: 0, createdBy: userLabel }
       if (apiEnabled) {
         const saved = await api.createDemanda(novo)
         setDemandas(prev=> [...prev, { ...novo, id: saved?.id ?? proxId(prev) }])
@@ -794,14 +864,17 @@ export default function App() {
 
   return (
     <div className="layout">
-      <Sidebar route={route} setRoute={setRoute} />
+      {user ? <Sidebar route={route} setRoute={setRoute} allowedRoutes={allowedRoutes} /> : null}
       <div className="content">
         <div className="app">
-          <Header onNew={onNew} view={view} setView={setView} showNew={false} />
-          {route==='dashboard' && (
+          {user ? <Header onNew={onNew} view={view} setView={setView} showNew={!!user} user={user} onLogout={logout} setRoute={setRoute} /> : null}
+          {!user && (
+            <LoginView onLogin={login} />
+          )}
+          {user && route==='dashboard' && (
             <DashboardView demandas={demandas} items={items} designers={designers} setView={setView} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} compact={compact} calRef={calRef} setCalRef={setCalRef} />
           )}
-          {route==='demandas' && (
+          {user && route==='demandas' && (
             <div className="demandas-layout">
               <div className="sidebar-col">
                 <FilterBar filtros={filtros} setFiltros={setFiltros} designers={designers} showSearch={false} />
@@ -812,25 +885,28 @@ export default function App() {
                   <button className="primary" onClick={onNew}>Nova demanda</button>
                 </div>
                 <div className="table-scroll">
-                  <TableView items={itemsSorted.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsSorted.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsSorted.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsSorted.length)} total={itemsSorted.length} compact={compact} />
+                  <TableView items={itemsSorted.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsSorted.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsSorted.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsSorted.length)} total={itemsSorted.length} compact={compact} canEdit={!!user} />
                 </div>
               </div>
             </div>
           )}
-          {route==='demandas' && (
+          {user && route==='demandas' && (
             <>
-          <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} cadDesigners={cadDesigners} cadPlataformas={cadPlataformas} onDelete={onDelete} />
+          <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} cadDesigners={cadDesigners} cadPlataformas={cadPlataformas} onDelete={onDelete} userLabel={userLabel} />
               <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designers} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} cadPlataformas={cadPlataformas} cadTipos={cadTipos} origens={ORIGENS} campanhas={campanhas} />
             </>
           )}
-          {route==='config' && (
+          {user && route==='config' && (
             <ConfigView themeVars={themeVars} setThemeVars={setThemeVars} onReset={onResetSystem} />
           )}
-          {route==='cadastros' && (
+          {user && route==='cadastros' && (
             <CadastrosView cadStatus={cadStatus} setCadStatus={setCadStatus} cadTipos={cadTipos} setCadTipos={setCadTipos} cadDesigners={cadDesigners} setCadDesigners={setCadDesigners} cadPlataformas={cadPlataformas} setCadPlataformas={setCadPlataformas} cadStatusColors={cadStatusColors} setCadStatusColors={setCadStatusColors} />
           )}
-          {route==='relatorios' && (
+          {user && route==='relatorios' && (
             <ReportsView demandas={demandas} items={items} designers={designers} filtros={filtros} setFiltros={setFiltros} />
+          )}
+          {user && route==='usuarios' && (
+            <UsersView users={readUsers()} onCreate={(nu)=>{ const list=readUsers(); writeUsers([...list, nu]) }} onDelete={(username)=>{ const list=readUsers().filter(u=>u.username!==username); writeUsers(list) }} role={role} />
           )}
           
         </div>
@@ -838,19 +914,57 @@ export default function App() {
     </div>
   )
 }
-function Sidebar({ route, setRoute }) {
+function Sidebar({ route, setRoute, allowedRoutes }) {
   return (
     <aside className="sidebar">
       <nav>
         <ul className="nav-list">
-          <li><a href="#" className={`nav-link ${route==='dashboard'?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute('dashboard') }}>📊 Dashboard</a></li>
-          <li><a href="#" className={`nav-link ${route==='demandas'?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute('demandas') }}>📋 Demandas</a></li>
-          <li><a href="#" className={`nav-link ${route==='config'?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute('config') }}>🎨 Configurações</a></li>
-          <li><a href="#" className={`nav-link ${route==='cadastros'?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute('cadastros') }}>⚙️ Cadastros</a></li>
-          <li><a href="#" className={`nav-link ${route==='relatorios'?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute('relatorios') }}>📈 Relatórios</a></li>
+          {allowedRoutes.map(r=> (
+            <li key={r}><a href="#" className={`nav-link ${route===r?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute(r) }}>
+              {r==='dashboard'?'📊 Dashboard': r==='demandas'?'📋 Demandas': r==='config'?'🎨 Configurações': r==='cadastros'?'⚙️ Cadastros': r==='relatorios'?'📈 Relatórios':'👥 Usuários'}
+            </a></li>
+          ))}
         </ul>
       </nav>
     </aside>
+  )
+}
+
+function UsersView({ users, onCreate, onDelete, role }) {
+  const [username, setUsername] = useState('')
+  const [name, setName] = useState('')
+  const [password, setPassword] = useState('')
+  const [urole, setUrole] = useState('comum')
+  const canManage = role==='admin' || role==='gerente'
+  if (!canManage) return <div className="panel"><div className="empty">Sem acesso</div></div>
+  const create = ()=>{ const u=username.trim(); if(!u||!password) return; const nu={ username:u, name: name||u, password, role: urole }; onCreate(nu); setUsername(''); setName(''); setPassword(''); setUrole('comum') }
+  const del = (u)=>{ if (u.username==='admin') return; onDelete(u.username) }
+  return (
+    <div className="panel">
+      <div className="tabs"><button className="tab active">Usuários</button></div>
+      <div className="form-grid">
+        <div className="form-row"><label>Usuário</label><input value={username} onChange={e=>setUsername(e.target.value)} /></div>
+        <div className="form-row"><label>Nome</label><input value={name} onChange={e=>setName(e.target.value)} /></div>
+        <div className="form-row"><label>Senha</label><input type="password" value={password} onChange={e=>setPassword(e.target.value)} /></div>
+        <div className="form-row"><label>Perfil</label>
+          <select value={urole} onChange={e=>setUrole(e.target.value)}>
+            <option value="comum">Comum</option>
+            <option value="gerente">Gerente</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div className="modal-actions"><button className="primary" type="button" onClick={create}>Criar usuário</button></div>
+      </div>
+      <div className="section-divider" />
+      <table className="report-matrix">
+        <thead><tr><th>Usuário</th><th>Nome</th><th>Perfil</th><th>Ações</th></tr></thead>
+        <tbody>
+          {(users||[]).map(u=> (
+            <tr key={u.username}><td>{u.username}</td><td>{u.name||u.username}</td><td>{u.role||'comum'}</td><td><button className="icon" onClick={()=>del(u)} disabled={u.username==='admin'}>🗑️</button></td></tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 

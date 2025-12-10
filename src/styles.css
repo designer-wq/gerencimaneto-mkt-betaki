@@ -28,6 +28,9 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',system-
 .tab.disabled{opacity:.5;cursor:not-allowed}
 .primary{background:var(--btnBg, var(--accent));color:var(--btnText, #111);border:none;border-radius:8px;padding:10px 14px;box-shadow:0 0 0 1px var(--btnBorder, var(--border))}
 .primary:hover{background:var(--btnHoverBg, var(--btnBg, var(--accent)))}
+.btn-lg{padding:12px 18px;border-radius:12px;width:100%}
+.btn-outline{background:transparent;color:#111;border:2px solid var(--accent);border-radius:10px;padding:8px 14px}
+.btn-outline:hover{background:#00000008}
 
 .filtersbar{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:10px;margin-bottom:16px}
 .filtersbar.toolbar{justify-content:space-between}
@@ -153,6 +156,17 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',system-
 .form-row input[type="date"]::-webkit-calendar-picker-indicator{opacity:1;filter:invert(79%) sepia(93%) saturate(566%) hue-rotate(22deg) brightness(95%) contrast(94%)}
 .modal-footer{display:flex;justify-content:flex-end}
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:8px}
+.login-wrap{display:grid;grid-template-columns:1.2fr 1fr;gap:0;background:#EDEFF1;border:1px solid #E3E5E7;border-radius:16px;box-shadow:var(--shadow);max-width:1000px;margin:24px auto;overflow:hidden}
+.login-banner{background:var(--accent);color:#111;display:grid;place-items:center;font-weight:700}
+.login-card{background:#fff;color:#111;padding:28px;display:flex;flex-direction:column;gap:12px}
+.login-title{font-size:28px;font-weight:800;text-align:center;margin-bottom:8px}
+.login-form{display:flex;flex-direction:column;gap:12px}
+.input-with-icon{position:relative}
+.login-input{width:100%;border:2px solid #E3E5E7;border-radius:10px;padding:12px 44px 12px 14px;background:#F4F6F8;color:#111}
+.login-input::placeholder{color:#9AA0A6}
+.input-icon{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#637381}
+.login-links{display:flex;justify-content:flex-end}
+.login-bottom{display:flex;align-items:center;gap:8px;justify-content:center;margin-top:4px}
 .tabs{display:flex;gap:8px;margin-bottom:8px}
 .empty{color:var(--muted)}
 .icon.clickable{cursor:pointer}
