@@ -22,6 +22,10 @@ const statusClass = s => {
   return ''
 }
 
+const isPendingStatus = (s)=>{ const v=String(s||'').toLowerCase(); return v.includes('pendente') || v.includes('aberta') || s==='Aberta' || s==='Pendente' }
+const isProdStatus = (s)=>{ const v=String(s||'').toLowerCase(); return v.includes('produção') || v.includes('progresso') || s==='Em Progresso' || s==='Em produção' }
+const isDoneStatus = (s)=>{ const v=String(s||'').toLowerCase(); return v.includes('conclu') || v.includes('aprov') || s==='Concluída' || s==='Aprovada' }
+
 const hexToRgb = (hex) => {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex||'')
   return m ? { r: parseInt(m[1],16), g: parseInt(m[2],16), b: parseInt(m[3],16) } : { r:17,g:24,b:39 }
@@ -1025,12 +1029,9 @@ function FilterBar({ filtros, setFiltros, designers, showSearch }) {
 
 function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, cadStatus, onDelete, onDuplicate, compact, calRef, setCalRef }) {
   const total = items.length || 1
-  const isPending = (s)=>{ const v=String(s||'').toLowerCase(); return v.includes('pendente') || v.includes('aberta') || s==='Aberta' || s==='Pendente' }
-  const isProd = (s)=>{ const v=String(s||'').toLowerCase(); return v.includes('produção') || v.includes('progresso') || s==='Em Progresso' || s==='Em produção' }
-  const isDone = (s)=>{ const v=String(s||'').toLowerCase(); return v.includes('conclu') || v.includes('aprov'); }
-  const concluidos = items.filter(x=> isDone(x.status))
+  const concluidos = items.filter(x=> isDoneStatus(x.status))
   const produTotal = concluidos.length
-  const backlog = items.filter(x=> !isDone(x.status)).length
+  const backlog = items.filter(x=> !isDoneStatus(x.status)).length
   const revisoesTot = items.reduce((acc,x)=> acc + (x.revisoes||0), 0)
   const retrabalhoPct = Math.round(100 * (items.filter(x=> (x.revisoes||0)>0).length / Math.max(1,total)))
   const slaGeralPct = (()=>{ const ok = concluidos.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot = concluidos.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })()
@@ -1044,8 +1045,8 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
   const capacityPerDay = 4
   const capacidadeIdealEquipe = designers.length * capacityPerDay * daysInPeriod
   const capacidadeUsadaPct = (()=>{ const ideal=capacidadeIdealEquipe; if(!ideal) return 0; return Math.round(100 * (produTotal/ideal)) })()
-  const emProducao = items.filter(x=> isProd(x.status)).length
-  const pendentes = items.filter(x=> isPending(x.status)).length
+  const emProducao = items.filter(x=> isProdStatus(x.status)).length
+  const pendentes = items.filter(x=> isPendingStatus(x.status)).length
   const workloadRows = (()=>{
     const per = {}
     concluidos.forEach(x=>{ const d=x.designer||'—'; per[d]=(per[d]||0)+1 })
@@ -1197,12 +1198,12 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros }) {
     if (!s || !e) return 1
     return Math.max(1, Math.round((e - s)/86400000) + 1)
   })()
-  const concluidos = items.filter(x=> x.status==='Concluída')
-  const pendentes = items.filter(x=> x.status==='Aberta')
-  const emProducao = items.filter(x=> x.status==='Em Progresso')
+  const concluidos = items.filter(x=> isDoneStatus(x.status))
+  const pendentes = items.filter(x=> isPendingStatus(x.status))
+  const emProducao = items.filter(x=> isProdStatus(x.status))
   const revisoesTot = items.reduce((acc,x)=> acc + (x.revisoes||0), 0)
   const produtividadeMedia = concluidos.length / daysInPeriod
-  const backlogItems = items.filter(x=> x.status!=='Concluída')
+  const backlogItems = items.filter(x=> !isDoneStatus(x.status))
   const diasRestantes = (p)=>{ if(!p) return null; const [y,m,d]=String(p).split('-').map(Number); const end=new Date(y,(m||1)-1,(d||1)); const start=new Date(); start.setHours(0,0,0,0); end.setHours(0,0,0,0); return Math.round((end - start)/86400000) }
   const backlogRisco = backlogItems.filter(x=> { const dl=diasRestantes(x.prazo); return dl!=null && dl<=2 })
   const prazoMedioBacklog = (()=>{ const arr=backlogItems.map(x=> diasRestantes(x.prazo)).filter(v=> v!=null); const avg = (arr.reduce((a,b)=>a+b,0)/(arr.length||1)); return +avg.toFixed(1) })()
