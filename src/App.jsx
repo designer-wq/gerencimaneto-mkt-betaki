@@ -1028,7 +1028,7 @@ function FilterBar({ filtros, setFiltros, designers, showSearch }) {
 }
 
 function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, cadStatus, onDelete, onDuplicate, compact, calRef, setCalRef }) {
-  const total = items.length || 1
+  const total = items.length
   const concluidos = items.filter(x=> isDoneStatus(x.status))
   const produTotal = concluidos.length
   const backlog = items.filter(x=> !isDoneStatus(x.status)).length
