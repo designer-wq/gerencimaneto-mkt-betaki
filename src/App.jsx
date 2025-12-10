@@ -1025,9 +1025,12 @@ function FilterBar({ filtros, setFiltros, designers, showSearch }) {
 
 function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, cadStatus, onDelete, onDuplicate, compact, calRef, setCalRef }) {
   const total = items.length || 1
-  const concluidos = items.filter(x=> x.status==='Concluída')
+  const isPending = (s)=>{ const v=String(s||'').toLowerCase(); return v.includes('pendente') || v.includes('aberta') || s==='Aberta' || s==='Pendente' }
+  const isProd = (s)=>{ const v=String(s||'').toLowerCase(); return v.includes('produção') || v.includes('progresso') || s==='Em Progresso' || s==='Em produção' }
+  const isDone = (s)=>{ const v=String(s||'').toLowerCase(); return v.includes('conclu') || v.includes('aprov'); }
+  const concluidos = items.filter(x=> isDone(x.status))
   const produTotal = concluidos.length
-  const backlog = items.filter(x=> x.status!=='Concluída').length
+  const backlog = items.filter(x=> !isDone(x.status)).length
   const revisoesTot = items.reduce((acc,x)=> acc + (x.revisoes||0), 0)
   const retrabalhoPct = Math.round(100 * (items.filter(x=> (x.revisoes||0)>0).length / Math.max(1,total)))
   const slaGeralPct = (()=>{ const ok = concluidos.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot = concluidos.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })()
@@ -1041,9 +1044,8 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
   const capacityPerDay = 4
   const capacidadeIdealEquipe = designers.length * capacityPerDay * daysInPeriod
   const capacidadeUsadaPct = (()=>{ const ideal=capacidadeIdealEquipe; if(!ideal) return 0; return Math.round(100 * (produTotal/ideal)) })()
-  const countStatus = s => items.filter(x=> x.status===s).length
-  const emProducao = countStatus('Em Progresso')
-  const pendentes = countStatus('Aberta')
+  const emProducao = items.filter(x=> isProd(x.status)).length
+  const pendentes = items.filter(x=> isPending(x.status)).length
   const workloadRows = (()=>{
     const per = {}
     concluidos.forEach(x=>{ const d=x.designer||'—'; per[d]=(per[d]||0)+1 })
