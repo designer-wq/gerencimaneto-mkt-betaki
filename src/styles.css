@@ -164,7 +164,7 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',system-
 .input-with-icon{position:relative}
 .login-input{width:100%;border:2px solid #E3E5E7;border-radius:10px;padding:12px 44px 12px 14px;background:#F4F6F8;color:#111}
 .login-input::placeholder{color:#9AA0A6}
-.input-icon{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#637381}
+.input-icon{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:#637381;display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#EDEFF1}
 .login-links{display:flex;justify-content:flex-end}
 .login-bottom{display:flex;align-items:center;gap:8px;justify-content:center;margin-top:4px}
 .tabs{display:flex;gap:8px;margin-bottom:8px}
@@ -333,3 +333,4 @@ a:hover{opacity:.85}
 .status-bar.st-done{background:#10b981;color:#111}
 .status-bar.st-late{background:#ef4444;color:#fff}
 .date-row .form-row input[type="date"]{width:100%}
+.content.no-sidebar{margin-left:0;display:grid;place-items:center;min-height:100vh}

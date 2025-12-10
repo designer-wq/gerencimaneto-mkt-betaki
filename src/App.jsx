@@ -114,7 +114,6 @@ function Header({ onNew, view, setView, showNew, user, onLogout }) {
           <div style={{display:'flex',alignItems:'center',gap:8}}>
             <span className="chip">{user.name||user.username}</span>
             <button className="primary" onClick={onLogout}>⎋ Sair</button>
-            <button className="primary" onClick={onNew}>Nova Demanda</button>
           </div>
         ) : null}
       </div>
@@ -163,11 +162,11 @@ function LoginView({ onLogin }) {
         <form onSubmit={submit} className="login-form">
           <div className="input-with-icon">
             <input className="login-input" placeholder="Usuário" value={username} onChange={e=>setUsername(e.target.value)} required />
-            <span className="input-icon">👤</span>
+            <span className="input-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg></span>
           </div>
           <div className="input-with-icon">
             <input className="login-input" type="password" placeholder="Insira sua senha" value={password} onChange={e=>setPassword(e.target.value)} required />
-            <span className="input-icon">👁️</span>
+            <span className="input-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg></span>
           </div>
           <div className="login-links"><a href="#" onClick={e=>e.preventDefault()}>Esqueceu sua senha?</a></div>
           <button className="primary btn-lg" type="submit">Entrar</button>
@@ -865,7 +864,7 @@ export default function App() {
   return (
     <div className="layout">
       {user ? <Sidebar route={route} setRoute={setRoute} allowedRoutes={allowedRoutes} /> : null}
-      <div className="content">
+      <div className={`content ${user?'':'no-sidebar'}`}>
         <div className="app">
           {user ? <Header onNew={onNew} view={view} setView={setView} showNew={!!user} user={user} onLogout={logout} setRoute={setRoute} /> : null}
           {!user && (
@@ -935,10 +934,13 @@ function UsersView({ users, onCreate, onDelete, role }) {
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [urole, setUrole] = useState('comum')
+  const [cargo, setCargo] = useState('Designer')
+  const [list, setList] = useState(readUsers())
   const canManage = role==='admin' || role==='gerente'
   if (!canManage) return <div className="panel"><div className="empty">Sem acesso</div></div>
-  const create = ()=>{ const u=username.trim(); if(!u||!password) return; const nu={ username:u, name: name||u, password, role: urole }; onCreate(nu); setUsername(''); setName(''); setPassword(''); setUrole('comum') }
-  const del = (u)=>{ if (u.username==='admin') return; onDelete(u.username) }
+  const refresh = ()=> setList(readUsers())
+  const create = ()=>{ const u=username.trim(); if(!u||!password) return; const nu={ username:u, name: name||u, password, role: urole, cargo }; onCreate(nu); refresh(); setUsername(''); setName(''); setPassword(''); setUrole('comum'); setCargo('Designer') }
+  const del = (u)=>{ if (u.username==='admin') return; onDelete(u.username); refresh() }
   return (
     <div className="panel">
       <div className="tabs"><button className="tab active">Usuários</button></div>
@@ -953,14 +955,22 @@ function UsersView({ users, onCreate, onDelete, role }) {
             <option value="admin">Admin</option>
           </select>
         </div>
+        <div className="form-row"><label>Cargo</label>
+          <select value={cargo} onChange={e=>setCargo(e.target.value)}>
+            <option value="Designer">Designer</option>
+            <option value="Social Media">Social Media</option>
+            <option value="Gerente">Gerente</option>
+            <option value="Externo">Externo</option>
+          </select>
+        </div>
         <div className="modal-actions"><button className="primary" type="button" onClick={create}>Criar usuário</button></div>
       </div>
       <div className="section-divider" />
       <table className="report-matrix">
-        <thead><tr><th>Usuário</th><th>Nome</th><th>Perfil</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Usuário</th><th>Nome</th><th>Perfil</th><th>Cargo</th><th>Ações</th></tr></thead>
         <tbody>
-          {(users||[]).map(u=> (
-            <tr key={u.username}><td>{u.username}</td><td>{u.name||u.username}</td><td>{u.role||'comum'}</td><td><button className="icon" onClick={()=>del(u)} disabled={u.username==='admin'}>🗑️</button></td></tr>
+          {(list||[]).map(u=> (
+            <tr key={u.username}><td>{u.username}</td><td>{u.name||u.username}</td><td>{u.role||'comum'}</td><td>{u.cargo||''}</td><td><button className="icon" onClick={()=>del(u)} disabled={u.username==='admin'}>🗑️</button></td></tr>
           ))}
         </tbody>
       </table>
