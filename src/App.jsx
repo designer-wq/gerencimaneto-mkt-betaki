@@ -809,6 +809,10 @@ export default function App() {
       api.listCadastros('plataformas').then(arr=> Array.isArray(arr) && setCadPlataformas(arr))
     } else if (db) {
       let unsubDemandas = null
+      let unsubCadStatus = null
+      let unsubCadTipos = null
+      let unsubCadDesigners = null
+      let unsubCadPlataformas = null
       try {
         unsubDemandas = onSnapshot(collection(db, 'demandas'), snap => {
           const arr = []
@@ -816,14 +820,41 @@ export default function App() {
           setDemandas(arr)
         })
       } catch {}
-      const loadCad = async (col, setter) => {
-        try { const snap = await getDocs(collection(db, col)); const arr=[]; snap.forEach(d=> arr.push(d.data()?.name || d.id)); setter(arr) } catch {}
+      try {
+        unsubCadStatus = onSnapshot(collection(db, 'cad_status'), snap => {
+          const arr = []
+          snap.forEach(d => arr.push(d.data()?.name || d.id))
+          setCadStatus(arr)
+        })
+      } catch {}
+      try {
+        unsubCadTipos = onSnapshot(collection(db, 'cad_tipos'), snap => {
+          const arr = []
+          snap.forEach(d => arr.push(d.data()?.name || d.id))
+          setCadTipos(arr)
+        })
+      } catch {}
+      try {
+        unsubCadDesigners = onSnapshot(collection(db, 'cad_designers'), snap => {
+          const arr = []
+          snap.forEach(d => arr.push(d.data()?.name || d.id))
+          setCadDesigners(arr)
+        })
+      } catch {}
+      try {
+        unsubCadPlataformas = onSnapshot(collection(db, 'cad_plataformas'), snap => {
+          const arr = []
+          snap.forEach(d => arr.push(d.data()?.name || d.id))
+          setCadPlataformas(arr)
+        })
+      } catch {}
+      return ()=>{
+        try { unsubDemandas && unsubDemandas() } catch {}
+        try { unsubCadStatus && unsubCadStatus() } catch {}
+        try { unsubCadTipos && unsubCadTipos() } catch {}
+        try { unsubCadDesigners && unsubCadDesigners() } catch {}
+        try { unsubCadPlataformas && unsubCadPlataformas() } catch {}
       }
-      loadCad('cad_status', setCadStatus)
-      loadCad('cad_tipos', setCadTipos)
-      loadCad('cad_designers', setCadDesigners)
-      loadCad('cad_plataformas', setCadPlataformas)
-      return ()=>{ try { unsubDemandas && unsubDemandas() } catch {} }
     }
   },[])
   useEffect(()=>{
