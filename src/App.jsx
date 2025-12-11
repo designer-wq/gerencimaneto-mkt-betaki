@@ -807,7 +807,11 @@ export default function App() {
       let unsubCadPlataformas = null
       let unsubUsuarios = null
       try {
-        unsubDemandas = onSnapshot(collection(db, 'demandas'), snap => {
+        const uname = user?.username||''
+        const isMgr = (user?.role==='admin' || user?.role==='gerente')
+        const base = collection(db, 'demandas')
+        const q = isMgr ? base : query(base, where('designer','==', uname))
+        unsubDemandas = onSnapshot(q, snap => {
           const arr = []
           snap.forEach(d => arr.push({ id: d.id, ...d.data() }))
           setDemandas(arr)
