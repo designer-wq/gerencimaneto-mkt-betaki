@@ -870,6 +870,16 @@ export default function App() {
   const login = async (username, password) => {
     const uname = String(username||'').trim()
     if (!uname || !password) throw new Error('Credenciais ausentes')
+    if (!auth || !db) {
+      ensureAdminSeed()
+      const list = readUsers()
+      const found = list.find(u=> u.username===uname && u.password===password)
+      if (!found) throw new Error('Firebase não configurado ou usuário local inválido')
+      const u = { username: found.username, name: found.name||found.username, role: found.role||'comum', pages: found.pages||null, actions: found.actions||null, cargo: found.cargo||'' }
+      try { writeLS('localUser', u) } catch {}
+      setUser(u)
+      return
+    }
     let email = uname
     if (!/@/.test(uname)) {
       try {
