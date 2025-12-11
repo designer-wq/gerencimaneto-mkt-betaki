@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getFirestore } from 'firebase/firestore'
+import { getAuth, setPersistence, browserSessionPersistence } from 'firebase/auth'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -11,5 +12,11 @@ const firebaseConfig = {
 }
 
 const enabled = Object.values(firebaseConfig).every(Boolean)
-export const db = enabled ? getFirestore(initializeApp(firebaseConfig)) : null
-export const isFirebaseEnabled = !!db
+const app = enabled ? initializeApp(firebaseConfig) : null
+export const db = app ? getFirestore(app) : null
+export const auth = app ? getAuth(app) : null
+if (auth) {
+  try { setPersistence(auth, browserSessionPersistence).catch(()=>{}) } catch {}
+}
+export const isFirebaseEnabled = !!app
+export const firebaseApp = app

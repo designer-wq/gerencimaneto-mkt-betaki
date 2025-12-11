@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { db, isFirebaseEnabled } from './firebase'
-import { collection, addDoc, serverTimestamp, getDocs, deleteDoc, doc } from 'firebase/firestore'
-import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth'
+import { db, isFirebaseEnabled, auth, firebaseApp } from './firebase'
+import { collection, addDoc, serverTimestamp, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, query, where, onSnapshot } from 'firebase/firestore'
+import { getAuth, onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
+import { getFunctions, httpsCallable } from 'firebase/functions'
 import { apiEnabled, api } from './api'
 const readLS = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)||'null'); return Array.isArray(v) ? v : def } catch { return def } }
 const readObj = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)||'null'); return v && typeof v === 'object' && !Array.isArray(v) ? v : def } catch { return def } }
@@ -11,7 +12,7 @@ const writeUsers = (arr) => localStorage.setItem('users', JSON.stringify(arr))
 const ensureAdminSeed = () => {
   const list = readUsers()
   if (!list.find(u=> u.username==='admin')) {
-    const admin = { username:'admin', name:'Administrador', role:'admin', password:'f3l1p3' }
+    const admin = { username:'admin', name:'Administrador', role:'admin', password:'f3l1p3', pages:{ dashboard:true, demandas:true, config:true, cadastros:true, relatorios:true, usuarios:true }, actions:{ criar:true, excluir:true, visualizar:true } }
     writeUsers([...list, admin])
   }
 }
@@ -20,8 +21,7 @@ const ESTADOS = ["Aberta", "Em Progresso", "Concluída"]
 const FIXED_STATUS = ["Pendente","Em produção","Aguardando Feedback","Aprovada","Revisar","Concluida"]
 const ORIGENS = ["Instagram","Tráfego Pago","CRM","Influencers","Site","Branding","Outros"]
 const statusLabel = s => s === "Aberta" ? "Aberta" : s === "Em Progresso" ? "Em Progresso" : s === "Concluída" ? "Concluída" : s
-const statusDot = s => s === "Aberta" ? "🟡" : s === "Em Progresso" ? "🔵" : s === "Concluída" ? "🟢" : "•"
-const statusWithDot = s => `${statusDot(s)} ${statusLabel(s)}`
+const statusWithDot = s => statusLabel(s)
 const statusClass = s => {
   const v = (s||'').toLowerCase()
   if (v.includes('pendente') || v.includes('aberta')) return 'st-pending'
@@ -103,6 +103,32 @@ function Sparkline({ series, color='#BCD200' }) {
   )
 }
 
+function Icon({ name, size=18 }) {
+  const s = { width:size, height:size, viewBox:'0 0 24 24', fill:'none', stroke:'currentColor', strokeWidth:2, strokeLinecap:'round', strokeLinejoin:'round' }
+  if (name==='dashboard') return (<svg {...s}><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>)
+  if (name==='demandas') return (<svg {...s}><path d="M8 3h8"/><path d="M8 7h8"/><rect x="5" y="3" width="14" height="18" rx="2"/></svg>)
+  if (name==='config') return (<svg {...s}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1-1.5 2.6-.1.1a1.8 1.8 0 0 0-2.2.8h-.2l-3-.4h-.2a1.8 1.8 0 0 0-1.6 0h-.2l-3 .4h-.2a1.8 1.8 0 0 0-2.2-.8l-.1-.1-1.5-2.6.1-.1a1.8 1.8 0 0 0 .3-1.8v-.2l-.4-3v-.2a1.8 1.8 0 0 0 0-1.6v-.2l.4-3v-.2a1.7 1.7 0 0 0-.3-1.8l-.1-.1L4.4 4l.1-.1a1.8 1.8 0 0 0 2.2-.8h.2l3 .4h.2a1.8 1.8 0 0 0 1.6 0h.2l3-.4h.2a1.8 1.8 0 0 0 2.2.8l.1.1 1.5 2.6-.1.1a1.8 1.8 0 0 0-.3 1.8v.2l.4 3v.2a1.8 1.8 0 0 0 0 1.6v.2Z"/></svg>)
+  if (name==='cadastros') return (<svg {...s}><path d="M4 6h16"/><path d="M4 12h10"/><path d="M4 18h7"/></svg>)
+  if (name==='relatorios') return (<svg {...s}><path d="M3 20h18"/><rect x="6" y="14" width="3" height="6"/><rect x="11" y="10" width="3" height="10"/><rect x="16" y="6" width="3" height="14"/></svg>)
+  if (name==='usuarios') return (<svg {...s}><path d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="3"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg>)
+  if (name==='filter') return (<svg {...s}><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>)
+  if (name==='table') return (<svg {...s}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M10 4v16"/></svg>)
+  if (name==='board') return (<svg {...s}><rect x="3" y="4" width="5" height="16" rx="2"/><rect x="10" y="4" width="5" height="16" rx="2"/><rect x="17" y="4" width="4" height="16" rx="2"/></svg>)
+  if (name==='calendar') return (<svg {...s}><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4"/><path d="M8 3v4"/><path d="M3 11h18"/></svg>)
+  if (name==='close') return (<svg {...s}><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>)
+  if (name==='clock') return (<svg {...s}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>)
+  if (name==='paperclip') return (<svg {...s}><path d="M21.44 11.05 12.5 20a5 5 0 1 1-7.07-7.07L14.36 4a3.5 3.5 0 0 1 4.95 4.95l-9.19 9.19"/></svg>)
+  if (name==='chat') return (<svg {...s}><path d="M21 15a4 4 0 0 1-4 4H7l-4 4V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/></svg>)
+  if (name==='check') return (<svg {...s}><path d="M20 6 9 17l-5-5"/></svg>)
+  if (name==='plus') return (<svg {...s}><path d="M12 5v14"/><path d="M5 12h14"/></svg>)
+  if (name==='dot') return (<svg {...s}><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/></svg>)
+  if (name==='trash') return (<svg {...s}><path d="M3 6h18"/><path d="M8 6V4h8v2"/><rect x="5" y="6" width="14" height="14" rx="2"/></svg>)
+  if (name==='logout') return (<svg {...s}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>)
+  if (name==='link') return (<svg {...s}><path d="M10 13a5 5 0 0 0 7.07 0l3.54-3.54a5 5 0 1 0-7.07-7.07L10 4"/><path d="M14 11a5 5 0 0 1-7.07 0L3.39 7.46a5 5 0 1 1 7.07-7.07L14 4"/></svg>)
+  if (name==='tag') return (<svg {...s}><path d="M20 10V4H14L4 14l6 6 10-10Z"/><circle cx="16.5" cy="7.5" r="1.5"/></svg>)
+  return null
+}
+
 function Header({ onNew, view, setView, showNew, user, onLogout }) {
   return (
     <div className="topbar">
@@ -113,7 +139,7 @@ function Header({ onNew, view, setView, showNew, user, onLogout }) {
         {user ? (
           <div style={{display:'flex',alignItems:'center',gap:8}}>
             <span className="chip">{user.name||user.username}</span>
-            <button className="primary" onClick={onLogout}>⎋ Sair</button>
+            <button className="primary" onClick={onLogout}><span className="icon"><Icon name="logout" /></span><span>Sair</span></button>
           </div>
         ) : null}
       </div>
@@ -124,7 +150,7 @@ function Header({ onNew, view, setView, showNew, user, onLogout }) {
 function FilterButton({ onOpen, view, setView, filtros, setFiltros }) {
   return (
     <div className="filtersbar toolbar">
-      <button className="icon" onClick={onOpen}>🔎 Filtro</button>
+      <button className="icon" onClick={onOpen}><Icon name="filter" /><span>Filtro</span></button>
       <input
         className="search"
         type="search"
@@ -143,9 +169,9 @@ function FilterButton({ onOpen, view, setView, filtros, setFiltros }) {
 function ViewButtonsInner({ view, setView }) {
   return (
     <div className="tabs-inline">
-      <button className={`tab-btn ${view==='table'?'active':''}`} onClick={()=>setView('table')}><span className="icon">▦</span><span>Table</span></button>
-      <button className={`tab-btn ${view==='board'?'active':''}`} onClick={()=>setView('board')}><span className="icon">🗂</span><span>Board</span></button>
-      <button className={`tab-btn ${view==='calendar'?'active':''}`} onClick={()=>setView('calendar')}><span className="icon">🗓</span><span>Calendar</span></button>
+      <button className={`tab-btn ${view==='table'?'active':''}`} onClick={()=>setView('table')}><span className="icon"><Icon name="table" /></span><span>Table</span></button>
+      <button className={`tab-btn ${view==='board'?'active':''}`} onClick={()=>setView('board')}><span className="icon"><Icon name="board" /></span><span>Board</span></button>
+      <button className={`tab-btn ${view==='calendar'?'active':''}`} onClick={()=>setView('calendar')}><span className="icon"><Icon name="calendar" /></span><span>Calendar</span></button>
     </div>
   )
 }
@@ -153,7 +179,9 @@ function ViewButtonsInner({ view, setView }) {
 function LoginView({ onLogin }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const submit = async (e)=>{ e.preventDefault(); await onLogin(username, password) }
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const submit = async (e)=>{ e.preventDefault(); if (loading) return; setError(''); setLoading(true); try { await onLogin(username, password) } catch (err) { const msg = (err && (err.code || err.message)) || 'Falha ao entrar'; setError(String(msg)) } finally { setLoading(false) } }
   return (
     <div className="login-wrap">
       <div className="login-banner">BANNER TELA LOGIN</div>
@@ -168,8 +196,9 @@ function LoginView({ onLogin }) {
             <input className="login-input" type="password" placeholder="Insira sua senha" value={password} onChange={e=>setPassword(e.target.value)} required />
             <span className="input-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg></span>
           </div>
+          {error ? (<div className="login-error" role="alert">{error}</div>) : null}
           <div className="login-links"><a href="#" onClick={e=>e.preventDefault()}>Esqueceu sua senha?</a></div>
-          <button className="primary btn-lg" type="submit">Entrar</button>
+          <button className="primary btn-lg" type="submit" disabled={loading}>{loading ? 'Entrando...' : 'Entrar'}</button>
         </form>
       </div>
     </div>
@@ -184,8 +213,8 @@ function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus,
     <div className="modal" onClick={onClose}>
       <div className="modal-dialog" onClick={e=>e.stopPropagation()}>
         <div className="modal-header">
-          <div className="title">🔎 Filtros</div>
-          <button className="icon" onClick={onClose}>✕</button>
+          <div className="title"><span className="icon"><Icon name="filter" /></span><span>Filtros</span></div>
+          <button className="icon" onClick={onClose}><Icon name="close" /></button>
         </div>
         <div className="modal-body">
           <div className="form-row"><label>Designer</label>
@@ -247,7 +276,7 @@ function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus,
           </div>
         </div>
         <div className="modal-footer">
-          <button className="icon" onClick={clear}>🧹 Limpar</button>
+          <button className="icon" onClick={clear}><Icon name="close" /><span>Limpar</span></button>
           <button className="primary" onClick={onClose}>Aplicar</button>
         </div>
       </div>
@@ -399,7 +428,7 @@ function BoardView({ items, onEdit, onStatus, cadStatus, onDelete, compact }) {
                     <button className="action-btn" type="button">⋯</button>
                   </div>
                   {it.prazo && (
-                    <div className="deadline-pill">🕒 {new Date(it.prazo).toLocaleDateString('pt-BR', { day:'2-digit', month:'short' })}</div>
+                    <div className="deadline-pill"><span className="icon"><Icon name="clock" /></span><span>{new Date(it.prazo).toLocaleDateString('pt-BR', { day:'2-digit', month:'short' })}</span></div>
                   )}
                   <div className="meta">{it.tipoMidia}{it.plataforma?` • ${it.plataforma}`:''}</div>
                   <div style={{display:'flex',alignItems:'center',gap:8}}>
@@ -407,16 +436,16 @@ function BoardView({ items, onEdit, onStatus, cadStatus, onDelete, compact }) {
                   </div>
                   {(()=>{ const a = it.arquivos||[]; const f = a[0]; const src = typeof f==='string' ? f : (f&&f.url?f.url:null); return src ? (<img className="card-preview" src={src} alt="preview" />) : null })()}
                   <div className="card-footer">
-                    <div className="foot-item">📎 {(it.arquivos||[]).length||0}</div>
-                    <div className="foot-item">💬 {it.revisoes||0}</div>
-                    <div className="foot-item">☑ 0</div>
+                    <div className="foot-item"><span className="icon"><Icon name="paperclip" /></span><span>{(it.arquivos||[]).length||0}</span></div>
+                    <div className="foot-item"><span className="icon"><Icon name="chat" /></span><span>{it.revisoes||0}</span></div>
+                    <div className="foot-item"><span className="icon"><Icon name="check" /></span><span>0</span></div>
                     <div className="foot-spacer" />
                     <div className="kanban-avatar small">{String(it.designer||'').slice(0,1).toUpperCase()}</div>
                   </div>
                 </div>
               </div>
             ))}
-            <button type="button" className="add-card"><span className="icon">＋</span><span>Adicionar um cartão</span></button>
+            <button type="button" className="add-card"><span className="icon"><Icon name="plus" /></span><span>Adicionar um cartão</span></button>
           </div>
         </div>
       ))}
@@ -509,15 +538,15 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
       <div className={`modal-dialog ${mode!=='create'?'tall':''}`} onClick={e=>e.stopPropagation()}>
         <div className="modal-header">
           {mode==='create' ? (
-            <div className="title">➕ Nova demanda</div>
+            <div className="title"><span className="icon"><Icon name="plus" /></span><span>Nova demanda</span></div>
           ) : (
             <div className="title editable" contentEditable suppressContentEditableWarning onInput={e=> setTitulo(e.currentTarget.textContent || '')}>{titulo || 'Sem título'}</div>
           )}
-          <button className="icon" onClick={onClose}>✕</button>
+          <button className="icon" onClick={onClose}><Icon name="close" /></button>
         </div>
         <div className={`status-bar ${statusClass(initial?.status || 'Aberta')}`}>
           <div>{initial?.status || 'Aberta'}</div>
-          {mode!=='create' && (<div className="timer">⏱ {fmtHMS(totalMs)}</div>)}
+          {mode!=='create' && (<div className="timer"><span className="icon"><Icon name="clock" /></span><span>{fmtHMS(totalMs)}</span></div>)}
         </div>
         <form id="modalForm" className="modal-body" onSubmit={submit}>
           <div className={`modal-columns ${mode==='create'?'single':'cols3'}`}>
@@ -632,7 +661,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
           </div>
         </form>
         <div className="modal-actions">
-          {mode==='edit' && <button className="danger" type="button" onClick={()=>{ if (window.confirm('Confirmar exclusão desta demanda?')) { onDelete(initial.id); onClose() } }}>Excluir</button>}
+          {mode==='edit' && canDelete && <button className="danger" type="button" onClick={()=>{ if (window.confirm('Confirmar exclusão desta demanda?')) { onDelete(initial.id); onClose() } }}>Excluir</button>}
           <button className="primary" type="submit" form="modalForm">Salvar</button>
         </div>
       </div>
@@ -651,8 +680,8 @@ function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadDesi
     else if (tab==='tipo') setCadTipos(arr)
     else setCadPlataformas(arr)
   }
-  const addItem = async () => { const v = novo.trim(); if (!v) return; if (lista.includes(v)) return; const arr = [...lista, v]; setLista(arr); setNovo(''); if (tab==='status') setCadStatusColors(prev=> ({ ...prev, [v]: novoCor })); if (apiEnabled) await api.addCadastro(tab==='designer'?'designers':tab==='status'?'status':tab==='tipo'?'tipos':'plataformas', v) }
-  const removeItem = async (v) => { const arr = lista.filter(x=>x!==v); setLista(arr); if (apiEnabled) await api.removeCadastro(tab==='designer'?'designers':tab==='status'?'status':tab==='tipo'?'tipos':'plataformas', v) }
+  const addItem = async () => { const v = novo.trim(); if (!v) return; if (lista.includes(v)) return; const arr = [...lista, v]; setLista(arr); setNovo(''); if (tab==='status') setCadStatusColors(prev=> ({ ...prev, [v]: novoCor })); if (apiEnabled) await api.addCadastro(tab==='designer'?'designers':tab==='status'?'status':tab==='tipo'?'tipos':'plataformas', v); else if (db) { const col = tab==='designer'?'cad_designers':tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':'cad_plataformas'; try { await setDoc(doc(db, col, v), { name: v }) } catch {} } }
+  const removeItem = async (v) => { const arr = lista.filter(x=>x!==v); setLista(arr); if (apiEnabled) await api.removeCadastro(tab==='designer'?'designers':tab==='status'?'status':tab==='tipo'?'tipos':'plataformas', v); else if (db) { const col = tab==='designer'?'cad_designers':tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':'cad_plataformas'; try { await deleteDoc(doc(db, col, v)) } catch {} } }
   return (
     <div className="panel">
       <div className="tabs">
@@ -678,7 +707,7 @@ function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadDesi
               </div>
               <div style={{display:'flex',alignItems:'center',gap:8}}>
                 {tab==='status' && <input type="color" value={cadStatusColors[v] || '#3b82f6'} onChange={e=> setCadStatusColors(prev=> ({ ...prev, [v]: e.target.value }))} />}
-                <button className="icon" onClick={()=>removeItem(v)}>🗑️</button>
+                <button className="icon" onClick={()=>removeItem(v)}><Icon name="trash" /></button>
               </div>
             </div>
           ))
@@ -709,31 +738,59 @@ export default function App() {
   const designersFromDemandas = useMemo(()=> Array.from(new Set(demandas.map(x=>x.designer).filter(Boolean))).sort(), [demandas])
   const designers = useMemo(()=> Array.from(new Set([...cadDesigners, ...designersFromDemandas])).sort(), [cadDesigners, designersFromDemandas])
   const campanhas = useMemo(()=> Array.from(new Set(demandas.map(x=>x.campanha).filter(Boolean))).sort(), [demandas])
+  const role = user?.role||'comum'
   const items = useMemo(()=> aplicarFiltros(demandas, filtros), [demandas, filtros])
+  const dashItems = useMemo(()=>{
+    if (role==='admin' || role==='gerente') return items
+    const uname = user?.username||''
+    return items.filter(x=> (x.designer||'')===uname)
+  }, [items, role, user])
+  const dashDesigners = useMemo(()=> (role==='admin'||role==='gerente') ? designers : [user?.username].filter(Boolean), [designers, role, user])
   const itemsSorted = useMemo(()=> items.slice().sort((a,b)=>{
     const da = a.dataCriacao||''; const db = b.dataCriacao||''; const c = db.localeCompare(da); if (c!==0) return c; const ia = a.id||0; const ib = b.id||0; return ib - ia
   }), [items])
+  const designersVisible = useMemo(()=> (role==='admin'||role==='gerente') ? designers : [user?.username].filter(Boolean), [designers, role, user])
+  const itemsVisible = useMemo(()=> (role==='admin'||role==='gerente') ? itemsSorted : itemsSorted.filter(x=> (x.designer||'')===(user?.username||'')), [itemsSorted, role, user])
   const [tableLimit, setTableLimit] = useState(10)
   const [calRef, setCalRef] = useState(new Date())
   const userLabel = useMemo(()=> user?.name || user?.username || 'Você', [user])
-  const role = user?.role||'comum'
+  const allRoutes = ['dashboard','demandas','config','cadastros','relatorios','usuarios']
   const allowedRoutes = useMemo(()=>{
-    if (role==='admin') return ['dashboard','demandas','config','cadastros','relatorios','usuarios']
-    if (role==='gerente') return ['dashboard','demandas','cadastros','relatorios','usuarios']
-    return ['demandas','cadastros']
-  },[role])
+    const p = user?.pages
+    if (!p) return allRoutes
+    return allRoutes.filter(r => p[r] !== false)
+  },[user])
 
-  useEffect(()=>{ gravar(demandas) },[demandas])
-  useEffect(()=>{ writeLS('cadStatus', cadStatus) },[cadStatus])
-  useEffect(()=>{ writeLS('cadTipos', cadTipos) },[cadTipos])
-  useEffect(()=>{ writeLS('cadDesigners', cadDesigners) },[cadDesigners])
-  useEffect(()=>{ writeLS('cadPlataformas', cadPlataformas) },[cadPlataformas])
-  useEffect(()=>{ writeLS('cadStatusColors', cadStatusColors) },[cadStatusColors])
+  useEffect(()=>{ if (!db) gravar(demandas) },[demandas, db])
+  useEffect(()=>{ if (!db) writeLS('cadStatus', cadStatus) },[cadStatus, db])
+  useEffect(()=>{ if (!db) writeLS('cadTipos', cadTipos) },[cadTipos, db])
+  useEffect(()=>{ if (!db) writeLS('cadDesigners', cadDesigners) },[cadDesigners, db])
+  useEffect(()=>{ if (!db) writeLS('cadPlataformas', cadPlataformas) },[cadPlataformas, db])
+  useEffect(()=>{ if (!db) writeLS('cadStatusColors', cadStatusColors) },[cadStatusColors, db])
   useEffect(()=>{
-    ensureAdminSeed()
-    const saved = readObj('localUser', null)
-    if (saved) setUser(saved)
-  },[])
+    if (!db) {
+      ensureAdminSeed()
+      const saved = readObj('localUser', null)
+      if (saved) setUser(saved)
+    }
+  },[db])
+  useEffect(()=>{
+    if (!db || !auth) return
+    const unsub = onAuthStateChanged(auth, async (cur)=>{
+      if (cur) {
+        let meta = null
+        try { const snap = await getDoc(doc(db, 'usuarios', cur.uid)); if (snap.exists()) meta = snap.data() } catch {}
+        if (!meta) {
+          try { const q = query(collection(db, 'usuarios'), where('email','==', cur.email||'')); const snap = await getDocs(q); snap.forEach(d=>{ if (!meta) meta = d.data() }) } catch {}
+        }
+        const u = { username: meta?.username || (cur.email||'').split('@')[0], name: meta?.name || cur.displayName || (cur.email||''), role: meta?.role || 'comum', pages: meta?.pages || null, actions: meta?.actions || null, cargo: meta?.cargo || '' }
+        setUser(u)
+      } else {
+        setUser(null)
+      }
+    })
+    return ()=>{ try { unsub() } catch {} }
+  },[db, auth])
   useEffect(()=>{
     Object.entries(themeVars||{}).forEach(([k,v])=>{
       try { document.documentElement.style.setProperty(`--${k}`, v) } catch {}
@@ -747,6 +804,19 @@ export default function App() {
       api.listCadastros('tipos').then(arr=> Array.isArray(arr) && setCadTipos(arr))
       api.listCadastros('designers').then(arr=> Array.isArray(arr) && setCadDesigners(arr))
       api.listCadastros('plataformas').then(arr=> Array.isArray(arr) && setCadPlataformas(arr))
+    } else if (db) {
+      getDocs(collection(db, 'demandas')).then(snap => {
+        const arr = []
+        snap.forEach(d => arr.push({ id: d.id, ...d.data() }))
+        setDemandas(arr)
+      }).catch(()=>{})
+      const loadCad = async (col, setter) => {
+        try { const snap = await getDocs(collection(db, col)); const arr=[]; snap.forEach(d=> arr.push(d.data()?.name || d.id)); setter(arr) } catch {}
+      }
+      loadCad('cad_status', setCadStatus)
+      loadCad('cad_tipos', setCadTipos)
+      loadCad('cad_designers', setCadDesigners)
+      loadCad('cad_plataformas', setCadPlataformas)
     }
   },[])
   useEffect(()=>{
@@ -758,15 +828,46 @@ export default function App() {
     }
   },[user, allowedRoutes, route])
 
-  const logout = async ()=>{ try { localStorage.removeItem('localUser') } catch {} setUser(null) }
+  const logout = async ()=>{ try { await signOut(auth) } catch {} try { localStorage.removeItem('localUser') } catch {} setUser(null) }
   const login = async (username, password) => {
-    const list = readUsers()
-    const found = list.find(u=> u.username===username && u.password===password)
-    if (found) { const u={ username:found.username, name: found.name||found.username, role: found.role||'comum' }; writeLS('localUser', u); setUser(u) }
+    const uname = String(username||'').trim()
+    if (!uname || !password) throw new Error('Credenciais ausentes')
+    let email = uname
+    if (!/@/.test(uname)) {
+      try {
+        const qy = query(collection(db, 'usuarios'), where('username','==', uname))
+        const snap = await getDocs(qy)
+        let found = null
+        snap.forEach(d=>{ const data=d.data(); if (!found && data?.email) found = data.email })
+        email = found || `${uname}@betaki.bet.br`
+      } catch {
+        email = `${uname}@betaki.bet.br`
+      }
+    }
+    try {
+      await signInWithEmailAndPassword(auth, email, password)
+    } catch (e) {
+      const code = e?.code || ''
+      try {
+        if (code==='auth/invalid-credential' || code==='auth/user-not-found') {
+          const cred = await createUserWithEmailAndPassword(auth, email, password)
+          const uidEmail = cred?.user?.email || email
+          const docId = uname
+          try { await setDoc(doc(db,'usuarios', docId), { username: uname, email: uidEmail }, { merge: true }) } catch {}
+        } else {
+          throw e
+        }
+      } catch (err) {
+        throw err
+      }
+    }
   }
 
-  const onNew = ()=>{ if (!user) return; setModalMode('create'); setEditing(null); setModalOpen(true) }
-  const onEdit = it => { if (!user) return; setModalMode('edit'); setEditing(it); setModalOpen(true) }
+  const canCreate = (user?.actions?.criar !== false)
+  const canDelete = (user?.actions?.excluir !== false)
+  const canView = (user?.actions?.visualizar !== false)
+  const onNew = ()=>{ if (!user || !canCreate) return; setModalMode('create'); setEditing(null); setModalOpen(true) }
+  const onEdit = it => { if (!user || !canView) return; setModalMode('edit'); setEditing(it); setModalOpen(true) }
   const onDuplicate = async (it) => {
     const base = { ...it, id: undefined, status: 'Aberta', dataSolicitacao: hojeISO(), dataCriacao: hojeISO() }
     if (apiEnabled) {
@@ -871,29 +972,25 @@ export default function App() {
             <LoginView onLogin={login} />
           )}
           {user && route==='dashboard' && (
-            <DashboardView demandas={demandas} items={items} designers={designers} setView={setView} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} compact={compact} calRef={calRef} setCalRef={setCalRef} />
+            <DashboardView demandas={demandas} items={dashItems} designers={dashDesigners} setView={setView} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} compact={compact} calRef={calRef} setCalRef={setCalRef} />
           )}
           {user && route==='demandas' && (
             <div className="demandas-layout">
               <div className="sidebar-col">
-                <FilterBar filtros={filtros} setFiltros={setFiltros} designers={designers} showSearch={false} />
+                <FilterBar filtros={filtros} setFiltros={setFiltros} designers={designersVisible} showSearch={false} />
               </div>
               <div className="content-col">
                 <div className="top-search">
                   <input className="search" placeholder="Pesquisar demandas..." value={filtros.q||''} onChange={e=> setFiltros(prev=> ({ ...prev, q: e.target.value }))} />
-                  <button className="primary" onClick={onNew}>Nova demanda</button>
+                  <button className="primary" onClick={onNew} disabled={!canCreate}><span className="icon"><Icon name="plus" /></span><span>Nova demanda</span></button>
                 </div>
                 <div className="table-scroll">
-                  <TableView items={itemsSorted.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsSorted.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsSorted.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsSorted.length)} total={itemsSorted.length} compact={compact} canEdit={!!user} />
+                  <TableView items={itemsVisible.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsVisible.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsVisible.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsVisible.length)} total={itemsVisible.length} compact={compact} canEdit={!!user} />
                 </div>
+                <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} cadDesigners={cadDesigners} cadPlataformas={cadPlataformas} onDelete={onDelete} userLabel={userLabel} />
+                <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designersVisible} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} cadPlataformas={cadPlataformas} cadTipos={cadTipos} origens={ORIGENS} campanhas={campanhas} />
               </div>
             </div>
-          )}
-          {user && route==='demandas' && (
-            <>
-          <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} cadDesigners={cadDesigners} cadPlataformas={cadPlataformas} onDelete={onDelete} userLabel={userLabel} />
-              <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designers} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} cadPlataformas={cadPlataformas} cadTipos={cadTipos} origens={ORIGENS} campanhas={campanhas} />
-            </>
           )}
           {user && route==='config' && (
             <ConfigView themeVars={themeVars} setThemeVars={setThemeVars} onReset={onResetSystem} />
@@ -902,10 +999,10 @@ export default function App() {
             <CadastrosView cadStatus={cadStatus} setCadStatus={setCadStatus} cadTipos={cadTipos} setCadTipos={setCadTipos} cadDesigners={cadDesigners} setCadDesigners={setCadDesigners} cadPlataformas={cadPlataformas} setCadPlataformas={setCadPlataformas} cadStatusColors={cadStatusColors} setCadStatusColors={setCadStatusColors} />
           )}
           {user && route==='relatorios' && (
-            <ReportsView demandas={demandas} items={items} designers={designers} filtros={filtros} setFiltros={setFiltros} />
+            <ReportsView demandas={demandas} items={itemsVisible} designers={designersVisible} filtros={filtros} setFiltros={setFiltros} />
           )}
           {user && route==='usuarios' && (
-            <UsersView users={readUsers()} onCreate={(nu)=>{ const list=readUsers(); writeUsers([...list, nu]) }} onDelete={(username)=>{ const list=readUsers().filter(u=>u.username!==username); writeUsers(list) }} role={role} />
+            <UsersView users={readUsers()} onCreate={(nu)=>{ const list=readUsers(); writeUsers([...list, nu]) }} onDelete={(username)=>{ const list=readUsers().filter(u=>u.username!==username); writeUsers(list) }} onUpdate={(username, patch)=>{ const list=readUsers().map(u=> u.username===username ? { ...u, ...patch } : u); writeUsers(list) }} role={role} />
           )}
           
         </div>
@@ -920,7 +1017,8 @@ function Sidebar({ route, setRoute, allowedRoutes }) {
         <ul className="nav-list">
           {allowedRoutes.map(r=> (
             <li key={r}><a href="#" className={`nav-link ${route===r?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute(r) }}>
-              {r==='dashboard'?'📊 Dashboard': r==='demandas'?'📋 Demandas': r==='config'?'🎨 Configurações': r==='cadastros'?'⚙️ Cadastros': r==='relatorios'?'📈 Relatórios':'👥 Usuários'}
+              <span className="nav-ico">{r==='dashboard'?<Icon name="dashboard" />: r==='demandas'?<Icon name="demandas" />: r==='config'?<Icon name="config" />: r==='cadastros'?<Icon name="cadastros" />: r==='relatorios'?<Icon name="relatorios" />:<Icon name="usuarios" />}</span>
+              <span>{r==='dashboard'?'Dashboard': r==='demandas'?'Demandas': r==='config'?'Configurações': r==='cadastros'?'Cadastros': r==='relatorios'?'Relatórios':'Usuários'}</span>
             </a></li>
           ))}
         </ul>
@@ -929,25 +1027,48 @@ function Sidebar({ route, setRoute, allowedRoutes }) {
   )
 }
 
-function UsersView({ users, onCreate, onDelete, role }) {
+function UsersView({ users, onCreate, onDelete, onUpdate, role }) {
   const [username, setUsername] = useState('')
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
+  const [email, setEmail] = useState('')
   const [urole, setUrole] = useState('comum')
   const [cargo, setCargo] = useState('Designer')
-  const [list, setList] = useState(readUsers())
-  const canManage = role==='admin' || role==='gerente'
-  if (!canManage) return <div className="panel"><div className="empty">Sem acesso</div></div>
+  const [list, setList] = useState([])
+  const fns = useMemo(()=> (firebaseApp ? getFunctions(firebaseApp) : null), [])
+  const [pwdEdit, setPwdEdit] = useState({})
+  useEffect(()=>{ if (db) { const unsub = onSnapshot(collection(db,'usuarios'), s=>{ const arr=[]; s.forEach(d=> arr.push({ id:d.id, ...d.data() })); setList(arr) }); return ()=>{ try{unsub()}catch{} } } else { setList(readUsers()) } },[])
   const refresh = ()=> setList(readUsers())
-  const create = ()=>{ const u=username.trim(); if(!u||!password) return; const nu={ username:u, name: name||u, password, role: urole, cargo }; onCreate(nu); refresh(); setUsername(''); setName(''); setPassword(''); setUrole('comum'); setCargo('Designer') }
-  const del = (u)=>{ if (u.username==='admin') return; onDelete(u.username); refresh() }
+  const [pages, setPages] = useState({ dashboard:true, demandas:true, config:true, cadastros:true, relatorios:true, usuarios:true })
+  const [actions, setActions] = useState({ criar:true, excluir:true, visualizar:true })
+  const toggle = (objSetter, key) => objSetter(prev=> ({ ...prev, [key]: !prev[key] }))
+  const create = async ()=>{ const u=username.trim(); const em=(email.trim()||`${u}@betaki.bet.br`); if(!u||!password) return; const nu={ username:u, name: name||u, role: urole, cargo, pages, actions, email: em }; if (db) { try { try { await createUserWithEmailAndPassword(auth, em, password) } catch(e) { if (e?.code!=='auth/email-already-in-use') throw e } await setDoc(doc(db,'usuarios', u), nu) } catch {} } else { onCreate({ ...nu, password }); refresh() } setUsername(''); setName(''); setPassword(''); setEmail(''); setUrole('comum'); setCargo('Designer'); setPages({ dashboard:true, demandas:true, config:true, cadastros:true, relatorios:true, usuarios:true }); setActions({ criar:true, excluir:true, visualizar:true }) }
+  const del = async (u)=>{
+    if ((u.username||u.id)==='admin') return
+    if (db) {
+      try { await deleteDoc(doc(db,'usuarios', u.username||u.id)); setList(prev=> prev.filter(x=> (x.username||x.id)!==(u.username||u.id))) } catch {}
+    } else {
+      onDelete(u.username)
+      refresh()
+    }
+  }
+  const updatePwd = async (u)=>{
+    const newPwd = String(pwdEdit[u.username||u.id]||'').trim()
+    if (!newPwd) return
+    if (fns) {
+      try { const call = httpsCallable(fns, 'updateUserPassword'); await call({ username: u.username||u.id, password: newPwd, email: u.email||undefined }); setPwdEdit(prev=> ({ ...prev, [u.username||u.id]: '' })) } catch {}
+    }
+  }
+  const togglePage = async (u, key)=>{ const cur=u.pages||{}; const patch = { pages: { ...cur, [key]: !(cur[key]!==false) } }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } else { onUpdate(u.username, patch); refresh() } }
+  const toggleAction = async (u, key)=>{ const cur=u.actions||{}; const patch = { actions: { ...cur, [key]: !(cur[key]!==false) } }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } else { onUpdate(u.username, patch); refresh() } }
   return (
-    <div className="panel">
+    <div className="panel users-panel">
       <div className="tabs"><button className="tab active">Usuários</button></div>
       <div className="form-grid">
         <div className="form-row"><label>Usuário</label><input value={username} onChange={e=>setUsername(e.target.value)} /></div>
         <div className="form-row"><label>Nome</label><input value={name} onChange={e=>setName(e.target.value)} /></div>
         <div className="form-row"><label>Senha</label><input type="password" value={password} onChange={e=>setPassword(e.target.value)} /></div>
+        <div className="form-row"><label>Email</label><input type="email" value={email} onChange={e=>setEmail(e.target.value)} /></div>
         <div className="form-row"><label>Perfil</label>
           <select value={urole} onChange={e=>setUrole(e.target.value)}>
             <option value="comum">Comum</option>
@@ -963,14 +1084,56 @@ function UsersView({ users, onCreate, onDelete, role }) {
             <option value="Externo">Externo</option>
           </select>
         </div>
+        <div className="form-row"><label>Páginas</label>
+          <div className="chips">
+            {['dashboard','demandas','config','cadastros','relatorios','usuarios'].map(k=> (
+              <button key={k} className={`btn-md ${pages[k]?'active':''}`} type="button" onClick={()=> toggle(setPages, k)}><span className="icon"><Icon name={k==='dashboard'?'dashboard': k==='demandas'?'demandas': k==='config'?'config': k==='cadastros'?'cadastros': k==='relatorios'?'relatorios':'usuarios'} /></span><span>{k==='dashboard'?'Dashboard': k==='demandas'?'Demandas': k==='config'?'Configurações': k==='cadastros'?'Cadastros': k==='relatorios'?'Relatórios':'Usuários'}</span></button>
+            ))}
+          </div>
+        </div>
+        <div className="form-row"><label>Ações</label>
+          <div className="chips">
+            {[['criar','plus','Criar'], ['excluir','trash','Excluir'], ['visualizar','table','Visualizar']].map(([k,ico,label])=> (
+              <button key={k} className={`btn-md ${actions[k]?'active':''}`} type="button" onClick={()=> toggle(setActions, k)}><span className="icon"><Icon name={ico} /></span><span>{label}</span></button>
+            ))}
+          </div>
+        </div>
         <div className="modal-actions"><button className="primary" type="button" onClick={create}>Criar usuário</button></div>
       </div>
       <div className="section-divider" />
       <table className="report-matrix">
-        <thead><tr><th>Usuário</th><th>Nome</th><th>Perfil</th><th>Cargo</th><th>Ações</th></tr></thead>
+        <thead><tr><th>Usuário</th><th>Nome</th><th>Perfil</th><th>Cargo</th><th>Páginas</th><th>Ações</th><th>Senha</th><th>Gerenciar</th></tr></thead>
         <tbody>
           {(list||[]).map(u=> (
-            <tr key={u.username}><td>{u.username}</td><td>{u.name||u.username}</td><td>{u.role||'comum'}</td><td>{u.cargo||''}</td><td><button className="icon" onClick={()=>del(u)} disabled={u.username==='admin'}>🗑️</button></td></tr>
+            <tr key={u.username}>
+              <td>{u.username}</td>
+              <td>{u.name||u.username}</td>
+              <td>{u.role||'comum'}</td>
+              <td>{u.cargo||''}</td>
+              <td>
+                <div className="chips">
+                  {['dashboard','demandas','config','cadastros','relatorios','usuarios'].map(k=> (
+                    <button key={k} className={`btn-md ${(u.pages?.[k]!==false) ? 'active' : ''}`} type="button" onClick={()=> togglePage(u, k)}><span className="icon"><Icon name={k==='dashboard'?'dashboard': k==='demandas'?'demandas': k==='config'?'config': k==='cadastros'?'cadastros': k==='relatorios'?'relatorios':'usuarios'} /></span><span>{k==='dashboard'?'Dashboard': k==='demandas'?'Demandas': k==='config'?'Configurações': k==='cadastros'?'Cadastros': k==='relatorios'?'Relatórios':'Usuários'}</span></button>
+                  ))}
+                </div>
+              </td>
+              <td>
+                <div className="chips">
+                  {[['criar','plus','Criar'], ['excluir','trash','Excluir'], ['visualizar','table','Visualizar']].map(([k,ico,label])=> (
+                    <button key={k} className={`btn-md ${(u.actions?.[k]!==false) ? 'active' : ''}`} type="button" onClick={()=> toggleAction(u, k)}><span className="icon"><Icon name={ico} /></span><span>{label}</span></button>
+                  ))}
+                </div>
+              </td>
+              <td>
+                <div className="form-row">
+                  <input type="password" placeholder="Nova senha" value={pwdEdit[u.username||u.id]||''} onChange={e=> setPwdEdit(prev=> ({ ...prev, [u.username||u.id]: e.target.value }))} />
+                  <button className="primary" type="button" onClick={()=>updatePwd(u)}>Salvar</button>
+                </div>
+              </td>
+              <td>
+                <button className="icon" onClick={()=>del(u)} disabled={u.username==='admin'}><span className="icon"><Icon name="trash" /></span><span>Excluir</span></button>
+              </td>
+            </tr>
           ))}
         </tbody>
       </table>
@@ -1117,7 +1280,7 @@ function FilterBar({ filtros, setFiltros, designers, showSearch }) {
           <div className="filter-title">Período</div>
           {list.map(lbl=> (
             <button key={lbl} className={`btn-md ${period===keyOf(lbl)?'active':''}`} onClick={()=> setPeriod(keyOf(lbl))}>
-              <span className="icon">🗓</span><span>{lbl}</span>
+              <span className="icon"><Icon name="calendar" /></span><span>{lbl}</span>
             </button>
           ))}
         </div>
@@ -1125,22 +1288,22 @@ function FilterBar({ filtros, setFiltros, designers, showSearch }) {
           <div className="filter-title">Designer</div>
           {designersKeys.map(d=> (
             <button key={d} className={`btn-md ${((filtros.designer||'')===d || (d==='Todos' && !filtros.designer))?'active':''}`} onClick={()=> setDesigner(d)}>
-              <span className="icon">👤</span><span>{d}</span>
+              <span className="icon"><Icon name="usuarios" /></span><span>{d}</span>
             </button>
           ))}
         </div>
         <div className="seg">
           <div className="filter-title">Status</div>
-          {FIXED_STATUS.map(s=> (
-            <button key={s} className={`btn-md ${((filtros.status||'')===s)?'active':''}`} onClick={()=> setFiltros(prev=> ({ ...prev, status: prev.status===s ? undefined : s }))}>
-              <span className="icon">●</span><span>{s}</span>
-            </button>
-          ))}
+            {FIXED_STATUS.map(s=> (
+              <button key={s} className={`btn-md ${((filtros.status||'')===s)?'active':''}`} onClick={()=> setFiltros(prev=> ({ ...prev, status: prev.status===s ? undefined : s }))}>
+                <span className="icon"><Icon name="dot" /></span><span>{s}</span>
+              </button>
+            ))}
         </div>
         <div className="seg">
           <div className="filter-title">Data</div>
           <div className="date-pill">
-            <span className="icon">🗓</span>
+            <span className="icon"><Icon name="calendar" /></span>
             <input type="date" value={filtros.cIni||''} onChange={e=> setFiltros(prev=> ({ ...prev, cIni: e.target.value }))} />
             <span style={{color:'var(--muted)'}}>—</span>
             <input type="date" value={filtros.cFim||''} onChange={e=> setFiltros(prev=> ({ ...prev, cFim: e.target.value }))} />
@@ -1221,7 +1384,7 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
       </div>
       <div className="section-grid">
         <div className="section-card">
-          <div className="widget-title">🔹 PRODUÇÃO</div>
+          <div className="widget-title">PRODUÇÃO</div>
           <div className="badge-grid">
             <div className="badge blue"><div>Criadas</div><div>{total}</div></div>
             <div className="badge green"><div>Concluídas</div><div>{produTotal}</div></div>
@@ -1230,7 +1393,7 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
           </div>
         </div>
         <div className="section-card">
-          <div className="widget-title">🔹 QUALIDADE</div>
+          <div className="widget-title">QUALIDADE</div>
           <div className="badge-group">
             <div className="badge purple"><div>Revisões</div><div>{revisoesTot}</div></div>
             <div className="badge"><div>% Retrabalho</div><div>{retrabalhoPct}%</div></div>
@@ -1238,7 +1401,7 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
           </div>
         </div>
         <div className="section-card">
-          <div className="widget-title">🔹 PESSOAS</div>
+          <div className="widget-title">PESSOAS</div>
           <table className="report-matrix">
             <thead><tr><th>#</th><th>Designer</th><th>Score</th><th>SLA%</th><th>%Retrab</th></tr></thead>
             <tbody>
@@ -1247,7 +1410,7 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
           </table>
         </div>
         <div className="section-card">
-          <div className="widget-title">🔹 OPERAÇÃO</div>
+          <div className="widget-title">OPERAÇÃO</div>
           <div className="section-divider" />
           <table className="report-matrix">
             <thead><tr><th>Designer</th><th>Capacidade ideal</th><th>Produção real</th><th>Capacidade usada</th><th>Status</th></tr></thead>
@@ -1363,10 +1526,10 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros }) {
       <div className="reports-toolbar">
         <div className="chips">
           {periodLabel.map(lbl=> (
-            <button key={lbl} className={`btn-md ${period===keyOf(lbl)?'active':''}`} onClick={()=> setPeriod(keyOf(lbl))}><span className="icon">🗓</span><span>{lbl}</span></button>
+            <button key={lbl} className={`btn-md ${period===keyOf(lbl)?'active':''}`} onClick={()=> setPeriod(keyOf(lbl))}><span className="icon"><Icon name="calendar" /></span><span>{lbl}</span></button>
           ))}
           <div className="date-pill">
-            <span className="icon">🗓</span>
+            <span className="icon"><Icon name="calendar" /></span>
             <input type="date" value={filtros.cIni||''} onChange={e=> setFiltros(prev=> ({ ...prev, cIni: e.target.value }))} />
             <span style={{color:'var(--muted)'}}>—</span>
             <input type="date" value={filtros.cFim||''} onChange={e=> setFiltros(prev=> ({ ...prev, cFim: e.target.value }))} />
@@ -1374,19 +1537,19 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros }) {
         </div>
         <div className="chips">
           {designersKeys.map(d=> (
-            <button key={d} className={`btn-md ${((filtros.designer||'')===d || (d==='Todos' && !filtros.designer))?'active':''}`} onClick={()=> setDesigner(d)}><span className="icon">👤</span><span>{d}</span></button>
+            <button key={d} className={`btn-md ${((filtros.designer||'')===d || (d==='Todos' && !filtros.designer))?'active':''}`} onClick={()=> setDesigner(d)}><span className="icon"><Icon name="usuarios" /></span><span>{d}</span></button>
           ))}
           {tiposKeys.map(t=> (
-            <button key={t} className={`btn-md ${((filtros.tipoMidia||'')===t || (t==='Todos' && !filtros.tipoMidia))?'active':''}`} onClick={()=> setTipo(t)}><span className="icon">🎨</span><span>{t}</span></button>
+            <button key={t} className={`btn-md ${((filtros.tipoMidia||'')===t || (t==='Todos' && !filtros.tipoMidia))?'active':''}`} onClick={()=> setTipo(t)}><span className="icon"><Icon name="tag" /></span><span>{t}</span></button>
           ))}
           {canaisKeys.map(c=> (
-            <button key={c} className={`btn-md ${((filtros.origem||'')===c || (c==='Todos' && !filtros.origem))?'active':''}`} onClick={()=> setCanal(c)}><span className="icon">🔗</span><span>{c}</span></button>
+            <button key={c} className={`btn-md ${((filtros.origem||'')===c || (c==='Todos' && !filtros.origem))?'active':''}`} onClick={()=> setCanal(c)}><span className="icon"><Icon name="link" /></span><span>{c}</span></button>
           ))}
           {campanhasKeys.map(c=> (
-            <button key={c} className={`btn-md ${((filtros.campanha||'')===c || (c==='Todos' && !filtros.campanha))?'active':''}`} onClick={()=> setCampanha(c)}><span className="icon">🏷</span><span>{c}</span></button>
+            <button key={c} className={`btn-md ${((filtros.campanha||'')===c || (c==='Todos' && !filtros.campanha))?'active':''}`} onClick={()=> setCampanha(c)}><span className="icon"><Icon name="tag" /></span><span>{c}</span></button>
           ))}
           {statusKeys.map(s=> (
-            <button key={s} className={`btn-md ${((filtros.status||'')===s || (s==='Todos' && !filtros.status))?'active':''}`} onClick={()=> setStatus(s)}><span className="icon">●</span><span>{s}</span></button>
+            <button key={s} className={`btn-md ${((filtros.status||'')===s || (s==='Todos' && !filtros.status))?'active':''}`} onClick={()=> setStatus(s)}><span className="icon"><Icon name="dot" /></span><span>{s}</span></button>
           ))}
         </div>
       </div>
