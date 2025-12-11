@@ -963,11 +963,19 @@ export default function App() {
     else if (db) { try { await deleteDoc(doc(db, 'demandas', String(id))) } catch {} }
   }
   const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) => {
+    const ensureCad = async () => {
+      if (!db) return
+      try { if (designer) await setDoc(doc(db, 'cad_designers', String(designer)), { name: designer }, { merge: true }) } catch {}
+      try { if (tipoMidia) await setDoc(doc(db, 'cad_tipos', String(tipoMidia)), { name: tipoMidia }, { merge: true }) } catch {}
+      try { if (plataforma) await setDoc(doc(db, 'cad_plataformas', String(plataforma)), { name: plataforma }, { merge: true }) } catch {}
+      try { if (historico && Array.isArray(historico)) { const last = historico[0]; const st = last?.para || last?.de || 'Aberta'; if (st) await setDoc(doc(db, 'cad_status', String(st)), { name: st }, { merge: true }) } } catch {}
+    }
     if (modalMode==='edit' && editing) {
       const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, comentarios: comentarios ?? editing.comentarios, historico: historico ?? editing.historico, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, plataforma, prazo, origem, campanha }
       setDemandas(prev=> prev.map(x=> x.id===editing.id ? updated : x))
       if (apiEnabled) await api.updateDemanda(editing.id, updated)
       else if (db) { try { await updateDoc(doc(db, 'demandas', String(editing.id)), updated) } catch {} }
+      await ensureCad()
     } else {
       const hoje = hojeISO()
       const inicial = { tipo:'status', autor: userLabel, data: hoje, de: '', para: 'Aberta' }
@@ -982,6 +990,7 @@ export default function App() {
           try { await setDoc(doc(db, 'demandas', String(nextId)), { ...novo, id: nextId, createdAt: serverTimestamp() }) } catch {}
         }
       }
+      await ensureCad()
     }
     setModalOpen(false)
   }
@@ -1032,7 +1041,7 @@ export default function App() {
                 <div className="table-scroll">
                   <TableView items={itemsVisible.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsVisible.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsVisible.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsVisible.length)} total={itemsVisible.length} compact={compact} canEdit={!!user} />
                 </div>
-                <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} cadDesigners={cadDesigners} cadPlataformas={cadPlataformas} onDelete={onDelete} userLabel={userLabel} />
+                <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} cadDesigners={cadDesigners} cadPlataformas={cadPlataformas} onDelete={onDelete} userLabel={userLabel} canDelete={canDelete} />
                 <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designersVisible} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} cadPlataformas={cadPlataformas} cadTipos={cadTipos} origens={ORIGENS} campanhas={campanhas} />
               </div>
             </div>
