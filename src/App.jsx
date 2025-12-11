@@ -27,7 +27,9 @@ const statusClass = s => {
   if (v.includes('pendente') || v.includes('aberta')) return 'st-pending'
   if (v.includes('progresso') || v.includes('produção')) return 'st-progress'
   if (v.includes('feedback')) return 'st-feedback'
-  if (v.includes('conclu') || v.includes('aprov')) return 'st-done'
+  if (v.includes('revisar')) return 'st-review'
+  if (v.includes('aprov')) return 'st-approved'
+  if (v.includes('conclu')) return 'st-concluded'
   if (v.includes('atras')) return 'st-late'
   return ''
 }
@@ -46,6 +48,43 @@ const contrastText = (hex) => {
   return yiq >= 128 ? '#111' : '#fff'
 }
 const statusColor = (s, colors) => colors?.[s] || (s==='Aberta'?'#f59e0b': s==='Em Progresso'?'#3b82f6': s==='Concluída'?'#10b981':'#3b82f6')
+const extractMentions = (texto) => {
+  const m = String(texto||'').match(/@([a-zA-Z0-9_]+)/g)
+  return m ? m.map(x=> x.slice(1)) : []
+}
+const formatMinutes = (mins) => {
+  if (mins==null) return ''
+  const m = Math.max(0, Math.round(mins))
+  const h = Math.floor(m/60)
+  const mm = m%60
+  return h>0 ? `${h}h ${mm}m` : `${mm}m`
+}
+const calcPrevisaoIA = (allItems, it) => {
+  const concluidos = allItems.filter(x=> (String(x.status||'').toLowerCase().includes('conclu')) || x.status==='Concluída')
+  const byDesigner = concluidos.filter(x=> (x.designer||'')===(it.designer||''))
+  const byTipo = concluidos.filter(x=> (x.tipoMidia||'')===(it.tipoMidia||''))
+  const byCanal = concluidos.filter(x=> (x.origem||'')===(it.origem||''))
+  const byPlataforma = concluidos.filter(x=> (x.plataforma||'')===(it.plataforma||''))
+  const diffDays = (a,b)=>{ const toD = s=>{ const [y,m,dd]=String(s||'').split('-').map(Number); if(!y) return null; return new Date(y,m-1,dd) }; const da=toD(a), db=toD(b); if(!da||!db) return null; return Math.max(0, Math.round((db-da)/86400000)) }
+  const leadGeral = (()=>{ const arr=concluidos.map(x=> diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg=(arr.reduce((a,b)=>a+b,0)/(arr.length||1)); return Math.max(1, Math.round(avg)) })()
+  const leadDesigner = (()=>{ const arr=byDesigner.map(x=> diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg=(arr.reduce((a,b)=>a+b,0)/(arr.length||1)); return arr.length? Math.max(1, Math.round(avg)) : null })()
+  const leadTipo = (()=>{ const arr=byTipo.map(x=> diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg=(arr.reduce((a,b)=>a+b,0)/(arr.length||1)); return arr.length? Math.max(1, Math.round(avg)) : null })()
+  const leadCanal = (()=>{ const arr=byCanal.map(x=> diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg=(arr.reduce((a,b)=>a+b,0)/(arr.length||1)); return arr.length? Math.max(1, Math.round(avg)) : null })()
+  const leadPlataforma = (()=>{ const arr=byPlataforma.map(x=> diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg=(arr.reduce((a,b)=>a+b,0)/(arr.length||1)); return arr.length? Math.max(1, Math.round(avg)) : null })()
+  const revisoesMed = (()=>{ const arr=byDesigner.map(x=> x.revisoes||0); const avg=(arr.reduce((a,b)=>a+b,0)/(arr.length||1)); return Math.round(avg) })()
+  const ativosDoDesigner = allItems.filter(x=> (x.designer||'')===(it.designer||'') && !(/conclu/i.test(String(x.status||'')))).length
+  const capacidadeTeoricaDia = 4
+  const cargaPct = Math.min(100, Math.round((ativosDoDesigner/capacidadeTeoricaDia)*100))
+  const base = leadDesigner ?? leadTipo ?? leadPlataforma ?? leadCanal ?? leadGeral
+  const ajuste = (cargaPct>=80?1:0) + (revisoesMed>=2?1:0)
+  const estim = Math.max(1, base + ajuste)
+  const frases = []
+  frases.push(`Estimativa: ${estim} dia${estim>1?'s':''} úteis`)
+  if (cargaPct>=80) frases.push('Alta probabilidade de atraso devido à carga acima de 80%')
+  if (estim===1) frases.push('Peça deve ser concluída ainda hoje • Hoje até às 17h')
+  if (revisoesMed>=2) frases.push('Revisões esperadas acima da média para este designer')
+  return frases.join(' • ')
+}
 const defaultTheme = {
   bg:'#070707',
   panel:'#0E0E0E',
@@ -98,10 +137,20 @@ function Sparkline({ series, color='#BCD200' }) {
   const w = 120, h = 30
   const max = Math.max(...series, 1)
   const step = series.length > 1 ? w/(series.length-1) : w
-  const points = series.map((v,i)=> `${i*step},${h - (v/max)*h}`).join(' ')
+  const pts = series.map((v,i)=> ({ x:i*step, y: h - (v/max)*h }))
+  const points = pts.map(p=> `${p.x},${p.y}`).join(' ')
   return (
     <svg width={w} height={h} className="sparkline" viewBox={`0 0 ${w} ${h}`}>
-      <polyline points={points} fill="none" stroke={color} strokeWidth="2" />
+      <defs>
+        <linearGradient id="sg" x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0%" stopColor={color} stopOpacity="0.6" />
+          <stop offset="100%" stopColor={color} stopOpacity="1" />
+        </linearGradient>
+      </defs>
+      <polyline points={points} fill="none" stroke="url(#sg)" strokeWidth="2.5" />
+      {pts.map((p,i)=> (
+        <circle key={i} cx={p.x} cy={p.y} r="2.5" fill={color} />
+      ))}
     </svg>
   )
 }
@@ -173,7 +222,6 @@ function ViewButtonsInner({ view, setView }) {
   return (
     <div className="tabs-inline">
       <button className={`tab-btn ${view==='table'?'active':''}`} onClick={()=>setView('table')}><span className="icon"><Icon name="table" /></span><span>Table</span></button>
-      <button className={`tab-btn ${view==='board'?'active':''}`} onClick={()=>setView('board')}><span className="icon"><Icon name="board" /></span><span>Board</span></button>
       <button className={`tab-btn ${view==='calendar'?'active':''}`} onClick={()=>setView('calendar')}><span className="icon"><Icon name="calendar" /></span><span>Calendar</span></button>
     </div>
   )
@@ -208,9 +256,9 @@ function LoginView({ onLogin }) {
   )
 }
 
-function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus, cadPlataformas, cadTipos, origens, campanhas }) {
+function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus, cadTipos, origens, campanhas }) {
   const set = (k,v)=>setFiltros(prev=>({ ...prev, [k]: v }))
-  const clear = ()=>setFiltros({designer:'',status:'',plataforma:'',cIni:'',cFim:'',sIni:'',sFim:''})
+  const clear = ()=>setFiltros({designer:'',status:'',cIni:'',cFim:'',sIni:'',sFim:''})
   if (!open) return null
   return (
     <div className="modal" onClick={onClose}>
@@ -218,6 +266,38 @@ function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus,
         <div className="modal-header">
           <div className="title"><span className="icon"><Icon name="filter" /></span><span>Filtros</span></div>
           <button className="icon" onClick={onClose}><Icon name="close" /></button>
+        </div>
+        <div className="report-card">
+          <div className="report-title">Comparativo Mensal</div>
+          <div className="chips"><span className="chip">Produção</span></div>
+          {(()=>{ const prodA = concluidos.filter(x=> inMonth(x.dataConclusao, mesAtual)).length; const prodB = concluidos.filter(x=> inMonth(x.dataConclusao, mesPassado)).length; const max = Math.max(prodA, prodB, 1); const w=220; const h=80; const bar = (v,c)=> (<rect x={c} y={h - (v/max)*h} width="40" height={(v/max)*h} rx="6" />); return (
+            <svg width={w} height={h} className="bar-compare">
+              <g fill="#BCD200">{bar(prodA, 40)}</g>
+              <g fill="#4DA3FF">{bar(prodB, 140)}</g>
+            </svg>
+          ) })()}
+          <div className="chips"><span className="chip">Qualidade (retrabalho)</span></div>
+          {(()=>{ const arrA = concluidos.filter(x=> inMonth(x.dataConclusao, mesAtual)).map(x=> x.revisoes||0); const arrB = concluidos.filter(x=> inMonth(x.dataConclusao, mesPassado)).map(x=> x.revisoes||0); const qa = +(arrA.reduce((a,b)=>a+b,0)/(arrA.length||1)).toFixed(2); const qb = +(arrB.reduce((a,b)=>a+b,0)/(arrB.length||1)).toFixed(2); const max = Math.max(qa, qb, 1); const w=220; const h=80; const bar = (v,c)=> (<rect x={c} y={h - (v/max)*h} width="40" height={(v/max)*h} rx="6" />); return (
+            <svg width={w} height={h} className="bar-compare">
+              <g fill="#BCD200">{bar(qa, 40)}</g>
+              <g fill="#FF5E5E">{bar(qb, 140)}</g>
+            </svg>
+          ) })()}
+          <div className="chips"><span className="chip">Lead-time</span></div>
+          {(()=>{ const a=compMesAtual, b=compMesPassado; const max=Math.max(a,b,1); const w=220; const h=80; const bar = (v,c)=> (<rect x={c} y={h - (v/max)*h} width="40" height={(v/max)*h} rx="6" />); return (
+            <svg width={w} height={h} className="bar-compare">
+              <g fill="#BCD200">{bar(a, 40)}</g>
+              <g fill="#9B59B6">{bar(b, 140)}</g>
+            </svg>
+          ) })()}
+        </div>
+        <div className="report-card">
+          <div className="report-title">Insights Automáticos</div>
+          <div className="insights-grid">
+            {(()=>{ const bestSla = (()=>{ const per={}; concluidos.forEach(x=>{ const d=x.designer||'—'; const ok=x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo; const tot=x.prazo && x.dataConclusao; const cur=per[d]||{ok:0,total:0}; per[d]={ ok:cur.ok+(ok?1:0), total:cur.total+(tot?1:0) } }); const arr=Object.entries(per).map(([designer,v])=> ({designer, pct: Math.round(100*((v.ok/(v.total||1)))) })); return arr.sort((a,b)=> b.pct-a.pct)[0] })(); const canalMais = (()=>{ const m={}; items.forEach(x=>{ const o=x.origem||'Outros'; m[o]=(m[o]||0)+1 }); const arr=Object.entries(m).map(([origem,q])=>({origem,q})).sort((a,b)=> b.q-a.q); return arr[0] })(); const semRetrab = concluidos.filter(x=> (x.revisoes||0)===0).length===concluidos.length; const ltMelhorou = compMesAtual<=compMesPassado; const retrabStories = (()=>{ const arr=concluidos.filter(x=> /stor/i.test(String(x.tipoMidia||''))); const avg=+(arr.reduce((a,b)=> a+(b.revisoes||0),0)/(arr.length||1)).toFixed(2); return { qtd: arr.length, avg } })(); const msgs = []; if (bestSla) msgs.push(`O designer ${bestSla.designer} teve o melhor SLA do mês (${bestSla.pct}%)`); if (canalMais) msgs.push(`${canalMais.origem} foi o canal mais solicitado`); if (semRetrab) msgs.push('Nenhuma demanda apresentou retrabalho neste mês'); if (ltMelhorou) msgs.push('Seu lead-time melhorou em relação ao mês anterior'); if (retrabStories.qtd>0) msgs.push('A categoria Stories teve o maior retrabalho do mês'); return msgs })().map((t,i)=> (
+              <div key={i} className="insight-card"><div className="insight-ico">★</div><div className="insight-text">{t}</div></div>
+            ))}
+          </div>
         </div>
         <div className="modal-body">
           <div className="form-row"><label>Designer</label>
@@ -271,12 +351,7 @@ function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus,
               <input type="date" value={filtros.sFim} onChange={e=>set('sFim', e.target.value)} />
             </div>
           </div>
-          <div className="form-row"><label>Plataforma</label>
-            <select value={filtros.plataforma||''} onChange={e=>set('plataforma', e.target.value)}>
-              <option value="">Plataforma</option>
-              {cadPlataformas.map(p=> <option key={p} value={p}>{p}</option>)}
-            </select>
-          </div>
+          
         </div>
         <div className="modal-footer">
           <button className="icon" onClick={clear}><Icon name="close" /><span>Limpar</span></button>
@@ -304,7 +379,7 @@ function aplicarFiltros(items, f) {
   })
 }
 
-function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, hasMore, showMore, canCollapse, showLess, shown, total, compact, canEdit }) {
+function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, hasMore, showMore, canCollapse, showLess, shown, total, compact, canEdit, loading }) {
   const [menuOpen, setMenuOpen] = useState(null)
   const toggleMenu = (id) => setMenuOpen(prev => prev===id ? null : id)
   const pad = n => String(n).padStart(2,'0')
@@ -312,6 +387,14 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
   const thisWeek = isoWeek(new Date())
   const daysLeft = (p)=>{ if(!p) return ''; const [y,m,d]=String(p).split('-').map(Number); const end=new Date(y,(m||1)-1,(d||1)); const start=new Date(); start.setHours(0,0,0,0); end.setHours(0,0,0,0); return Math.round((end - start)/86400000) }
   const fmtDM = (s)=>{ if(!s) return ''; const [y,m,d]=String(s).split('-').map(Number); const dd=String(d).padStart(2,'0'); const ab=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][Math.max(0,Math.min(11,(m-1)||0))]; return `${dd}.${ab}` }
+  if (loading) {
+    return (
+      <div className={`table ${compact?'compact':''}`}>
+        <div className="skeleton row" style={{width:'60%'}}></div>
+        {Array.from({length:8}).map((_,i)=> (<div key={i} className="skeleton row" style={{width:`${90 - i*6}%`}}></div>))}
+      </div>
+    )
+  }
   return (
     <div className={`table ${compact?'compact':''}`}>
       <table>
@@ -343,7 +426,7 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
               </td>
               <td>{fmtDM(it.dataSolicitacao)}</td>
               <td>{fmtDM(it.dataCriacao)}</td>
-              <td>{daysLeft(it.prazo)}</td>
+              <td><span style={{color: (!isDoneStatus(it.status) && Number(daysLeft(it.prazo))<=1)?'#ef4444':'inherit'}}>{daysLeft(it.prazo)}</span></td>
               <td>{it.tipoMidia}</td>
               <td>{it.plataforma || ''}</td>
               <td>{it.link ? <a href={it.link} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}>Visualizar</a> : ''}</td>
@@ -370,7 +453,7 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
   )
 }
 
-function BoardView({ items, onEdit, onStatus, cadStatus, onDelete, compact }) {
+function BoardView({ items, onEdit, onStatus, onMoveToGroup, cadStatus, onDelete, compact, groupBy, loading }) {
   const mondayCols = [
     { name:'Pendente', map:'Aberta' },
     { name:'Em produção', map:'Em Progresso' },
@@ -380,21 +463,36 @@ function BoardView({ items, onEdit, onStatus, cadStatus, onDelete, compact }) {
   ]
   const available = new Set(cadStatus)
   const targetFor = (col) => available.has(col.map) ? col.map : (col.name==='Aguardando feedback' ? (available.has('Em Progresso')?'Em Progresso': cadStatus[0]) : (available.has('Concluída')?'Concluída': cadStatus[0]))
+  const groupCols = (()=>{
+    if (groupBy==='status') return mondayCols
+    const vals = Array.from(new Set(items.map(x=> x[groupBy] || '—'))).sort()
+    return vals.map(v=> ({ name: v, map: v }))
+  })()
   const isInCol = (it, col) => {
-    const s = String(it.status||'')
-    const v = s.toLowerCase()
-    if (col.name==='Pendente') return v.includes('pendente') || s==='Aberta' || s==='Pendente'
-    if (col.name==='Em produção') return v.includes('produção') || s==='Em Progresso' || s==='Em produção'
-    if (col.name==='Aguardando feedback') return v.includes('feedback') || s==='Aguardando feedback' || s==='Aguardando Feedback' || v.includes('revisar')
-    if (col.name==='Aprovada') return v.includes('aprov') || s==='Aprovada'
-    if (col.name==='Concluída') return s==='Concluída' || v.includes('concluida')
-    return s===col.map
+    if (groupBy==='status') {
+      const s = String(it.status||'')
+      const v = s.toLowerCase()
+      if (col.name==='Pendente') return v.includes('pendente') || s==='Aberta' || s==='Pendente'
+      if (col.name==='Em produção') return v.includes('produção') || s==='Em Progresso' || s==='Em produção'
+      if (col.name==='Aguardando feedback') return v.includes('feedback') || s==='Aguardando feedback' || s==='Aguardando Feedback' || v.includes('revisar')
+      if (col.name==='Aprovada') return v.includes('aprov') || s==='Aprovada'
+      if (col.name==='Concluída') return s==='Concluída' || v.includes('concluida')
+      return s===col.map
+    }
+    const val = it[groupBy] || '—'
+    return val===col.map
   }
   const onDropCol = (e, col) => {
     e.preventDefault()
-    const id = Number(e.dataTransfer.getData('id'))
-    const t = targetFor(col)
-    if (id && t) onStatus(id, t)
+    const idRaw = e.dataTransfer.getData('id')
+    if (!idRaw) return
+    const id = (/^\d+$/.test(String(idRaw)) ? Number(idRaw) : idRaw)
+    if (groupBy==='status') {
+      const t = targetFor(col)
+      if (t) onStatus(id, t)
+    } else {
+      onMoveToGroup(id, groupBy, col.map)
+    }
   }
   const onDragOver = (e)=>{ e.preventDefault(); e.currentTarget.classList.add('dragover') }
   const onDragLeave = (e)=>{ e.currentTarget.classList.remove('dragover') }
@@ -408,17 +506,31 @@ function BoardView({ items, onEdit, onStatus, cadStatus, onDelete, compact }) {
     if (v.includes('story')) return 'label-story'
     return 'label-default'
   }
+  if (loading) {
+    return (
+      <div className="board">
+        {Array.from({length:4}).map((_,c)=> (
+          <div key={c} className="column">
+            <div className="col-head"><div>Carregando…</div></div>
+            <div className="col-body">
+              {Array.from({length:3}).map((_,j)=> (<div key={j} className="skeleton card"></div>))}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
   return (
     <div className="board">
-      {mondayCols.map(col => (
+      {groupCols.map(col => (
         <div key={col.name} className="column">
           <div className="col-head">
             <div>{col.name}</div>
             <button className="action-btn" type="button">⋯</button>
           </div>
           <div className="col-body dropzone" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={e=> onDropCol(e, col)}>
-            {items.filter(it=> isInCol(it, col)).map(it => (
-              <div key={it.id} className="card kanban-card" draggable onDragStart={e=>{ e.dataTransfer.setData('id', String(it.id)); e.currentTarget.classList.add('dragging') }} onDragEnd={e=> e.currentTarget.classList.remove('dragging')} onClick={()=>onEdit(it)}>
+            {items.filter(it=> isInCol(it, col)).slice().sort((a,b)=>{ const da=a.prazo?new Date(a.prazo):null; const db=b.prazo?new Date(b.prazo):null; if(!da&&!db) return 0; if(!da) return 1; if(!db) return -1; return da-db }).map(it => (
+              <div key={it.id} className={`card kanban-card ${/revisar/i.test(String(it.status||''))?'fx-revisar':''} ${it.fxDeleting?'fx-delete':''} ${(()=>{ const h=it.historico||[]; const today=hojeISO(); const has=h.find(x=> x.tipo==='alerta' && x.data===today); return has?'fx-notify':'' })()} ${(()=>{ const t=it.fxBounceAt||0; return (Date.now()-t)<400?'fx-bounce':'' })()}`} draggable onDragStart={e=>{ e.dataTransfer.setData('id', String(it.id)); e.currentTarget.classList.add('dragging') }} onDragEnd={e=> e.currentTarget.classList.remove('dragging')} onClick={()=>onEdit(it)}>
                 <div className="kanban-avatar">{String(it.designer||'').slice(0,2).toUpperCase()}</div>
                 <div>
                   <div className="label-row">
@@ -433,6 +545,7 @@ function BoardView({ items, onEdit, onStatus, cadStatus, onDelete, compact }) {
                   {it.prazo && (
                     <div className="deadline-pill"><span className="icon"><Icon name="clock" /></span><span>{new Date(it.prazo).toLocaleDateString('pt-BR', { day:'2-digit', month:'short' })}</span></div>
                   )}
+                  {it.prazo && !isDoneStatus(it.status) && (()=>{ const [y,m,d]=String(it.prazo).split('-').map(Number); const end=new Date(y,(m||1)-1,(d||1)); end.setHours(0,0,0,0); const start=new Date(); start.setHours(0,0,0,0); const near=(end-start)<=86400000; return near ? (<div className="deadline-pill" style={{background:'#ef4444',borderColor:'#ef4444',color:'#fff'}}><span className="icon"><Icon name="alert" /></span><span>Prazo &lt; 24h</span></div>) : null })()}
                   <div className="meta">{it.tipoMidia}{it.plataforma?` • ${it.plataforma}`:''}</div>
                   <div style={{display:'flex',alignItems:'center',gap:8}}>
                     <span className="pill" style={{borderColor:statusColorFor(it.status), color:statusColorFor(it.status)}}>{statusLabel(it.status)}</span>
@@ -488,7 +601,7 @@ function CalendarView({ items, refDate }) {
   )
 }
 
-function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, cadPlataformas, onDelete, userLabel, canDelete }) {
+function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, cadPlataformas, onDelete, userLabel, canDelete, onAddComment, cadOrigens }) {
   const [designer, setDesigner] = useState(initial?.designer || '')
   const [tipoMidia, setTipoMidia] = useState(initial?.tipoMidia || 'Post')
   const [titulo, setTitulo] = useState(initial?.titulo || '')
@@ -506,6 +619,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
   const [historico, setHistorico] = useState(initial?.historico || [])
   const [origem, setOrigem] = useState(initial?.origem || '')
   const [campanha, setCampanha] = useState(initial?.campanha || '')
+  const [modelo, setModelo] = useState('')
   useEffect(()=>{
     setDesigner(initial?.designer || '')
     setTipoMidia(initial?.tipoMidia || 'Post')
@@ -524,9 +638,18 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
     setHistorico(initial?.historico || [])
     setOrigem(initial?.origem || '')
     setCampanha(initial?.campanha || '')
-  },[initial, open, designers, cadTipos, cadPlataformas])
+  },[initial, open, designers, cadTipos, cadPlataformas, cadOrigens])
+  const addDaysISO = (iso, days) => { try{ const [y,m,d]=String(iso||hojeISO()).split('-').map(Number); const dt=new Date(y,(m||1)-1,(d||1)); dt.setDate(dt.getDate()+days); const z=n=>String(n).padStart(2,'0'); return `${dt.getFullYear()}-${z(dt.getMonth()+1)}-${z(dt.getDate())}` }catch{ return iso } }
+  const applyModelo = (name) => {
+    if (!name) return
+    if (name==='Post IG - Feed') { setTipoMidia('Post'); setPlataforma('Instagram'); setPrazo(addDaysISO(hojeISO(),2)); setTitulo(t=> t||'Post IG Feed') }
+    else if (name==='Story IG') { setTipoMidia('Story'); setPlataforma('Instagram'); setPrazo(addDaysISO(hojeISO(),1)); setTitulo(t=> t||'Story IG') }
+    else if (name==='Banner Ads') { setTipoMidia('Banner'); setPlataforma('Tráfego Pago'); setPrazo(addDaysISO(hojeISO(),3)); setTitulo(t=> t||'Banner Ads') }
+    else if (name==='Vídeo Motion') { setTipoMidia('Vídeo'); setPlataforma('YouTube'); setPrazo(addDaysISO(hojeISO(),5)); setTitulo(t=> t||'Vídeo Motion') }
+  }
   const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, dataFeedback, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) }
-  const addComentario = () => { const v = novoComentario.trim(); if (!v) return; const c = { texto: v, data: hojeISO() }; setComentarios(prev=> [c, ...prev]); setHistorico(prev=> [{ tipo:'comentario', autor:userLabel, data: c.data, texto: v }, ...prev]); setNovoComentario('') }
+  const addComentario = () => { const v = novoComentario.trim(); if (!v) return; const men = extractMentions(v); const c = { texto: v, data: hojeISO(), mentions: men, autor: userLabel }; const h = { tipo:'comentario', autor:userLabel, data: c.data, texto: v, mentions: men }; setComentarios(prev=> [c, ...prev]); setHistorico(prev=> [h, ...prev]); setNovoComentario(''); try { onAddComment && onAddComment(initial?.id, c, h) } catch {}
+  }
   const fmtDT = (s)=>{ if(!s) return ''; try{ return new Date(s).toLocaleString('pt-BR',{ day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) }catch{return s} }
   const [nowTs, setNowTs] = useState(Date.now())
   useEffect(()=>{ const id = setInterval(()=> setNowTs(Date.now()), 1000); return ()=> clearInterval(id) },[])
@@ -537,6 +660,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
   const [fallbackStart] = useState(()=> (!startedAtMs && isProdNow) ? Date.now() : null)
   const effectiveStart = startedAtMs ?? fallbackStart
   const totalMs = baseMs + (effectiveStart ? Math.max(0, nowTs - effectiveStart) : 0)
+  const [openStep, setOpenStep] = useState(null)
   if (!open) return null
   return (
     <div className="modal">
@@ -549,6 +673,16 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
           )}
           <button className="icon" onClick={onClose}><Icon name="close" /></button>
         </div>
+        {mode==='create' && (
+          <div className="modal-body">
+            <div className="form-row"><label>Modelo</label>
+              <select value={modelo} onChange={e=>{ const v=e.target.value; setModelo(v); applyModelo(v) }}>
+                <option value="">Selecione um modelo</option>
+                {['Post IG - Feed','Story IG','Banner Ads','Vídeo Motion'].map(n=> (<option key={n} value={n}>{n}</option>))}
+              </select>
+            </div>
+          </div>
+        )}
         <div className={`status-bar ${statusClass(initial?.status || 'Aberta')}`}>
           <div>{initial?.status || 'Aberta'}</div>
           {mode!=='create' && (<div className="timer"><span className="icon"><Icon name="clock" /></span><span>{fmtHMS(totalMs)}</span></div>)}
@@ -578,7 +712,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
               <div className="form-row"><label>Origem da Demanda</label>
                 <select value={origem} onChange={e=>setOrigem(e.target.value)} required>
                   <option value="">Origem</option>
-                  {ORIGENS.map(o=> <option key={o} value={o}>{o}</option>)}
+                  {(cadOrigens||ORIGENS).map(o=> <option key={o} value={o}>{o}</option>)}
                 </select>
               </div>
               <div className="form-row"><label>Campanha</label>
@@ -591,7 +725,8 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
                     <input type="file" multiple accept="image/*" onChange={e=>{
                       const max = 1024*1024
                       const files = Array.from(e.target.files||[]).filter(f=> (f.size||0) <= max).slice(0,5)
-                      const readers = files.map(f => new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve({ name: f.name, url: r.result }); r.readAsDataURL(f) }))
+                      const now = new Date().toISOString()
+                      const readers = files.map(f => new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve({ name: f.name, url: r.result, addedBy: userLabel, addedAt: now }); r.readAsDataURL(f) }))
                       Promise.all(readers).then(arr => {
                         setArquivos(arr)
                         setHistorico(prev=> [{ tipo:'arquivo', autor:userLabel, data: hojeISO(), arquivos: arr }, ...prev])
@@ -607,7 +742,8 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
                   <input type="file" multiple accept="image/*" onChange={e=>{
                     const max = 1024*1024
                     const files = Array.from(e.target.files||[]).filter(f=> (f.size||0) <= max).slice(0,5)
-                    const readers = files.map(f => new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve({ name: f.name, url: r.result }); r.readAsDataURL(f) }))
+                    const now = new Date().toISOString()
+                    const readers = files.map(f => new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve({ name: f.name, url: r.result, addedBy: userLabel, addedAt: now }); r.readAsDataURL(f) }))
                     Promise.all(readers).then(arr => {
                       setArquivos(arr)
                       setHistorico(prev=> [{ tipo:'arquivo', autor:userLabel, data: hojeISO(), arquivos: arr }, ...prev])
@@ -615,6 +751,21 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
                       setComentarios(prev=> [{ texto: `Arquivos anexados: ${nomes||arr.length}`, data: hojeISO() }, ...prev])
                     })
                   }} />
+                  {Array.isArray(arquivos) && arquivos.length>0 && (
+                    <div className="thumbs">
+                      {arquivos.map((f,idx)=> (
+                        <div key={f.name+idx} className="file-item">
+                          <img className="file-thumb" src={f.url} alt={f.name} />
+                          <div className="file-meta">{f.name}{f.addedBy?` • ${f.addedBy}`:''}</div>
+                          <div className="file-actions">
+                            <a href={f.url} download target="_blank" rel="noreferrer">Baixar</a>
+                            <label className="replace-btn">Substituir<input type="file" accept="image/*" style={{display:'none'}} onChange={e=>{ const nf=e.target.files?.[0]; if(!nf) return; const r=new FileReader(); const now=new Date().toISOString(); r.onload=()=>{ const rep={ name: nf.name, url: r.result, addedBy: userLabel, addedAt: now }; setArquivos(prev=> prev.map((x,i)=> i===idx? rep: x)) }; r.readAsDataURL(nf) }} /></label>
+                            <button type="button" onClick={()=> setArquivos(prev=> prev.filter((_,i)=> i!==idx))}>Excluir</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
               
@@ -640,9 +791,9 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
             )}
             {mode!=='create' && (
               <div className="modal-side">
-              <div className="activity">
-                <div className="form-row"><label>Comentários e atividade</label>
-                  <input placeholder="Escrever um comentário..." value={novoComentario} onChange={e=>setNovoComentario(e.target.value)} />
+          <div className="activity">
+            <div className="form-row"><label>Comentários</label>
+                  <input placeholder="Escreva um comentário… use @ para mencionar" value={novoComentario} onChange={e=>setNovoComentario(e.target.value)} />
                   {novoComentario.trim().length>0 && (
                     <div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}>
                       <button className="primary" type="button" onClick={addComentario}>Adicionar</button>
@@ -650,22 +801,20 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
                   )}
                 </div>
                 <div className="activity-list">
-                  {(historico||[]).length===0 ? <div className="empty">Sem atividade</div> : (
-                    (historico||[]).map((ev,i)=> (
+                  {(comentarios||[]).length===0 ? <div className="empty">Sem comentários</div> : (
+                    (comentarios||[]).map((ev,i)=> (
                       <div key={i} className="activity-item">
                         <div className="activity-entry">
                           <div className="avatar">V</div>
                           <div className="entry-content">
                             <div className="entry-title">
-                              {ev.tipo==='status' && (<span>{ev.autor||'—'} moveu este cartão de {ev.de||''} para {ev.para||''}</span>)}
-                              {ev.tipo==='comentario' && (<span><strong>{ev.autor||'—'}</strong> comentou: {ev.texto}</span>)}
-                              {ev.tipo==='arquivo' && (<span>{ev.autor||'—'} anexou {Array.isArray(ev.arquivos)?ev.arquivos.length:1} arquivo(s)</span>)}
+                              <span><strong>{ev.autor||'—'}</strong> comentou: {ev.texto}</span>
                             </div>
                             <div className="entry-time">{fmtDT(ev.data)}</div>
-                            {ev.tipo==='arquivo' && Array.isArray(ev.arquivos) && (
-                              <div className="thumbs">
-                                {ev.arquivos.map((f)=> (
-                                  <img key={f.name} className="file-thumb" src={f.url} alt={f.name} />
+                            {Array.isArray(ev.mentions) && ev.mentions.length>0 && (
+                              <div className="mentions-row">
+                                {ev.mentions.map(m=> (
+                                  <span key={m} className={`mention-pill ${String(userLabel||'').toLowerCase()===String(m||'').toLowerCase()?'you':''}`}>@{m}{String(userLabel||'').toLowerCase()===String(m||'').toLowerCase()? ' • Você foi mencionado':''}</span>
                                 ))}
                               </div>
                             )}
@@ -675,6 +824,62 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
                     ))
                   )}
                 </div>
+                {mode!=='create' && (
+                  <div className="timeline">
+                    <div className="form-row"><label>Linha do tempo</label></div>
+                    {['Criado','Em produção','Aguardando Feedback','Revisar','Aprovada','Concluída','Postado'].map(step=>{
+                      const match = (h, s)=>{
+                        const val = String((h.status_novo||h.para||'')||'').toLowerCase()
+                        if (s==='Criado') return val==='aberta'
+                        if (s==='Em produção') return val.includes('produ') || val.includes('progresso')
+                        if (s==='Aguardando Feedback') return val.includes('feedback')
+                        if (s==='Revisar') return val.includes('revisar')
+                        if (s==='Aprovada') return val.includes('aprov')
+                        if (s==='Concluída') return val.includes('conclu')
+                        return false
+                      }
+                      const evs = step==='Postado' ? (historico||[]).filter(h=> h.tipo==='mlabs') : (historico||[]).filter(h=> h.tipo==='status' && match(h, step))
+                      let list = evs
+                      if (step==='Concluída' && (!list || list.length===0) && String(initial?.status||'').toLowerCase().includes('conclu')) {
+                        const whenIso = initial?.finishedAt || (initial?.dataConclusao ? `${initial.dataConclusao}T00:00:00Z` : null)
+                        const fake = { tipo:'status', autor: initial?.autor||userLabel, data_hora_evento: whenIso, data: initial?.dataConclusao, status_novo:'Concluída', responsavel: initial?.designer||'' }
+                        list = [fake]
+                      }
+                      const last = list && list.length ? list[list.length-1] : null
+                      const dur = last?.duracao_em_minutos!=null ? formatMinutes(last.duracao_em_minutos) : ''
+                      const when = last?.data_hora_evento ? fmtDT(last.data_hora_evento) : fmtDT(last?.data)
+                      const resp = last?.responsavel || last?.autor || ''
+                      const count = list.length
+                      const isOpen = openStep===step
+                      return (
+                        <div key={step} className="timeline-item" onClick={()=> setOpenStep(p=> p===step? null : step)}>
+                          <div className="timeline-left"><span className="timeline-icon">●</span></div>
+                          <div className="timeline-body">
+                            <div className="timeline-title">{step}{count>1?` • ${count}`:''}</div>
+                            <div className="timeline-meta">{when}{resp?` • ${resp}`:''}{dur?` • ${dur}`:''}</div>
+                            {isOpen && count>0 && (
+                              <div className="timeline-details">
+                                {list.map((e,idx)=> (
+                                  <div key={idx} className="timeline-detail-row">
+                                    <div>{e?.data_hora_evento ? fmtDT(e.data_hora_evento) : fmtDT(e?.data)}</div>
+                                    <div>{e?.responsavel || e?.autor || ''}</div>
+                                    <div>{e?.duracao_em_minutos!=null ? formatMinutes(e.duracao_em_minutos) : ''}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                {mode!=='create' && (
+                  <div className="ia-panel">
+                    <div className="form-row"><label>Previsão de entrega por IA</label></div>
+                    <div className="ia-text">{initial?.previsaoIA || calcPrevisaoIA([], initial||{})}</div>
+                  </div>
+                )}
               </div>
               </div>
             )}
@@ -689,26 +894,26 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
   )
 }
 
-function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadPlataformas, setCadPlataformas, cadStatusColors, setCadStatusColors }) {
+function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadOrigens, setCadOrigens, cadStatusColors, setCadStatusColors }) {
   const [tab, setTab] = useState('tipo')
   const [novo, setNovo] = useState('')
   const [novoCor, setNovoCor] = useState('#f59e0b')
-  const lista = tab==='status' ? cadStatus : tab==='tipo' ? cadTipos : cadPlataformas
+  const lista = tab==='status' ? cadStatus : tab==='tipo' ? cadTipos : cadOrigens
   const setLista = (arr) => {
     if (tab==='status') setCadStatus(arr)
     else if (tab==='tipo') setCadTipos(arr)
-    else setCadPlataformas(arr)
+    else setCadOrigens(arr)
   }
-  const addItem = async () => { const v = novo.trim(); if (!v) return; if (lista.includes(v)) return; const arr = [...lista, v]; setLista(arr); setNovo(''); if (tab==='status') setCadStatusColors(prev=> ({ ...prev, [v]: novoCor })); if (apiEnabled) await api.addCadastro(tab==='status'?'status':tab==='tipo'?'tipos':'plataformas', v); else if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':'cad_plataformas'; try { await setDoc(doc(db, col, v), { name: v }) } catch {} } }
-  const removeItem = async (v) => { const arr = lista.filter(x=>x!==v); setLista(arr); if (apiEnabled) await api.removeCadastro(tab==='status'?'status':tab==='tipo'?'tipos':'plataformas', v); else if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':'cad_plataformas'; try { await deleteDoc(doc(db, col, v)) } catch {} } }
+  const addItem = async () => { const v = novo.trim(); if (!v) return; if (lista.includes(v)) return; const arr = [...lista, v]; setLista(arr); setNovo(''); if (tab==='status') setCadStatusColors(prev=> ({ ...prev, [v]: novoCor })); if (apiEnabled) await api.addCadastro(tab==='status'?'status':tab==='tipo'?'tipos':'origens', v); else if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':'cad_origens'; try { await setDoc(doc(db, col, v), { name: v }) } catch {} } }
+  const removeItem = async (v) => { const arr = lista.filter(x=>x!==v); setLista(arr); if (apiEnabled) await api.removeCadastro(tab==='status'?'status':tab==='tipo'?'tipos':'origens', v); else if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':'cad_origens'; try { await deleteDoc(doc(db, col, v)) } catch {} } }
   return (
     <div className="panel">
       <div className="tabs">
         <button className={`tab ${tab==='tipo'?'active':''}`} onClick={()=>setTab('tipo')}>Tipo</button>
-        <button className={`tab ${tab==='plataforma'?'active':''}`} onClick={()=>setTab('plataforma')}>Plataforma</button>
+        <button className={`tab ${tab==='origem'?'active':''}`} onClick={()=>setTab('origem')}>Origem</button>
       </div>
       <div className="form-row" style={{marginTop:10}}>
-        <label>{tab==='status'?'Novo Status':tab==='tipo'?'Novo Tipo':'Nova Plataforma'}</label>
+        <label>{tab==='status'?'Novo Status':tab==='tipo'?'Novo Tipo':'Nova Origem'}</label>
         <div style={{display:'flex', gap:8}}>
           <input value={novo} onChange={e=>setNovo(e.target.value)} />
           {tab==='status' && <input type="color" value={novoCor} onChange={e=>setNovoCor(e.target.value)} title="Cor" />}
@@ -758,6 +963,7 @@ function AlertBar({ revisarCount, aprovadaCount, onShowRevisar, onShowAprovada }
 export default function App() {
   const [user, setUser] = useState(null)
   const [demandas, setDemandas] = useState(ler())
+  const [loading, setLoading] = useState(true)
   const [view, setView] = useState('table')
   const [compact, setCompact] = useState(false)
   const [route, setRoute] = useState('dashboard')
@@ -767,10 +973,12 @@ export default function App() {
   const [modalMode, setModalMode] = useState('create')
   const [editing, setEditing] = useState(null)
   const [themeVars, setThemeVars] = useState(readObj('themeVars', defaultTheme))
+  const [appSettings, setAppSettings] = useState(readObj('appSettings', { autoPostMLabs:false }))
   
   const [cadStatus, setCadStatus] = useState(readLS('cadStatus', ["Aberta","Em Progresso","Concluída"]))
   const [cadTipos, setCadTipos] = useState(readLS('cadTipos', ["Post","Story","Banner","Vídeo","Outro"]))
   const [cadPlataformas, setCadPlataformas] = useState(readLS('cadPlataformas', []))
+  const [cadOrigens, setCadOrigens] = useState(readLS('cadOrigens', []))
   const [usersAll, setUsersAll] = useState([])
   const [cadStatusColors, setCadStatusColors] = useState(readObj('cadStatusColors', { Aberta:'#f59e0b', "Em Progresso":"#3b82f6", "Concluída":"#10b981" }))
   const designersFromDemandas = useMemo(()=> Array.from(new Set(demandas.map(x=>x.designer).filter(Boolean))).sort(), [demandas])
@@ -809,6 +1017,7 @@ export default function App() {
  
   const [tableLimit, setTableLimit] = useState(10)
   const [calRef, setCalRef] = useState(new Date())
+  const [groupBy, setGroupBy] = useState('status')
   const userLabel = useMemo(()=> user?.name || user?.username || 'Você', [user])
   const allRoutes = ['dashboard','demandas','config','cadastros','relatorios','usuarios']
   const allowedRoutes = useMemo(()=>{
@@ -818,10 +1027,13 @@ export default function App() {
   },[user])
 
   useEffect(()=>{ if (!db) gravar(demandas) },[demandas, db])
+  useEffect(()=>{ if (!db) setLoading(false) },[db])
   useEffect(()=>{ if (!db) writeLS('cadStatus', cadStatus) },[cadStatus, db])
   useEffect(()=>{ if (!db) writeLS('cadTipos', cadTipos) },[cadTipos, db])
+  useEffect(()=>{ if (!db) writeLS('appSettings', appSettings) },[appSettings, db])
   
   useEffect(()=>{ if (!db) writeLS('cadPlataformas', cadPlataformas) },[cadPlataformas, db])
+  useEffect(()=>{ if (!db) writeLS('cadOrigens', cadOrigens) },[cadOrigens, db])
   useEffect(()=>{ if (!db) writeLS('cadStatusColors', cadStatusColors) },[cadStatusColors, db])
   useEffect(()=>{
     if (!db) {
@@ -859,6 +1071,7 @@ export default function App() {
       let unsubCadStatus = null
       let unsubCadTipos = null
       let unsubCadPlataformas = null
+      let unsubCadOrigens = null
       let unsubUsuarios = null
       try {
         const uname = user?.username||''
@@ -869,6 +1082,7 @@ export default function App() {
           const arr = []
           snap.forEach(d => arr.push({ id: d.id, ...d.data() }))
           setDemandas(arr)
+          setLoading(false)
         })
       } catch {}
       try {
@@ -899,18 +1113,27 @@ export default function App() {
           setCadPlataformas(arr)
         })
       } catch {}
+      try {
+        unsubCadOrigens = onSnapshot(collection(db, 'cad_origens'), snap => {
+          const arr = []
+          snap.forEach(d => arr.push(d.data()?.name || d.id))
+          setCadOrigens(arr)
+        })
+      } catch {}
       return ()=>{
         try { unsubDemandas && unsubDemandas() } catch {}
         try { unsubCadStatus && unsubCadStatus() } catch {}
         try { unsubCadTipos && unsubCadTipos() } catch {}
         try { unsubUsuarios && unsubUsuarios() } catch {}
         try { unsubCadPlataformas && unsubCadPlataformas() } catch {}
+        try { unsubCadOrigens && unsubCadOrigens() } catch {}
       }
     } else if (!db && apiEnabled) {
       api.listDemandas().then(list => { if (Array.isArray(list)) setDemandas(list) })
       api.listCadastros('status').then(arr=> Array.isArray(arr) && setCadStatus(arr))
       api.listCadastros('tipos').then(arr=> Array.isArray(arr) && setCadTipos(arr))
       api.listCadastros('plataformas').then(arr=> Array.isArray(arr) && setCadPlataformas(arr))
+      api.listCadastros('origens').then(arr=> Array.isArray(arr) && setCadOrigens(arr))
     }
   },[db, user])
   useEffect(()=>{
@@ -988,7 +1211,7 @@ export default function App() {
   const onStatus = async (id, status) => {
     const today = hojeISO()
     setDemandas(prev=> prev.map(x=> {
-      if (x.id!==id) return x
+      if (String(x.id)!==String(id)) return x
       const changed = x.status !== status
       const wasProd = String(x.status||'').toLowerCase().includes('produ') || String(x.status||'').toLowerCase().includes('progresso')
       const isProd = String(status||'').toLowerCase().includes('produ') || String(status||'').toLowerCase().includes('progresso')
@@ -997,6 +1220,11 @@ export default function App() {
       let startedAt = x.startedAt || null
       let finishedAt = x.finishedAt || null
       const isFeedback = String(status||'').toLowerCase().includes('feedback')
+      const wasFeedback = String(x.status||'').toLowerCase().includes('feedback')
+      let slaStartAt = x.slaStartAt || null
+      let slaStopAt = x.slaStopAt || null
+      let slaPauseMs = Number(x.slaPauseMs||0)
+      let pauseStartedAt = x.pauseStartedAt || null
       if (changed) {
         if (wasProd && !isProd && startedAt) {
           const startedMs = Date.parse(startedAt)
@@ -1005,6 +1233,15 @@ export default function App() {
         }
         if (!wasProd && isProd && !startedAt) {
           startedAt = new Date(nowMs).toISOString()
+          if (!slaStartAt) slaStartAt = startedAt
+        }
+        if (!wasFeedback && isFeedback && !pauseStartedAt) {
+          pauseStartedAt = new Date(nowMs).toISOString()
+        }
+        if (wasFeedback && !isFeedback && pauseStartedAt) {
+          const pms = Date.parse(pauseStartedAt)
+          if (!isNaN(pms)) slaPauseMs += Math.max(0, nowMs - pms)
+          pauseStartedAt = null
         }
       }
       const isRev = String(status||'').toLowerCase().includes('revisar')
@@ -1012,24 +1249,181 @@ export default function App() {
       const isDone = String(status||'').toLowerCase().includes('concluida') || status==='Concluída'
       const dataConclusao = isDone ? (x.dataConclusao||today) : x.dataConclusao
       const dataCriacao = isDone ? (x.dataCriacao||today) : x.dataCriacao
-      if (changed && isDone) finishedAt = new Date(nowMs).toISOString()
-      const histItem = changed ? { tipo:'status', autor: userLabel, data: today, de: x.status, para: status } : null
-      const historico = histItem ? [histItem, ...(x.historico||[])] : (x.historico||[])
+      if (changed && isDone) { finishedAt = new Date(nowMs).toISOString(); slaStopAt = finishedAt }
+      const prevStatusEvent = (x.historico||[]).find(ev=> ev.tipo==='status')
+      const prevTs = prevStatusEvent?.data_hora_evento ? Date.parse(prevStatusEvent.data_hora_evento) : (prevStatusEvent?.data ? Date.parse(`${prevStatusEvent.data}T00:00:00Z`) : null)
+      const nowIso = new Date(nowMs).toISOString()
+      const durMin = changed && prevTs ? Math.round((nowMs - prevTs)/60000) : null
+      const histItem = changed ? { tipo:'status', autor: userLabel, data: today, data_hora_evento: nowIso, status_anterior: x.status, status_novo: status, duracao_em_minutos: durMin, responsavel: userLabel, id_demanda: x.id, de: x.status, para: status } : null
+      const prazoMs = (()=>{ if(!x.prazo) return null; const [y,m,d]=String(x.prazo).split('-').map(Number); const end=new Date(y,(m||1)-1,(d||1)); end.setHours(0,0,0,0); const start=new Date(); start.setHours(0,0,0,0); return end - start })()
+      const nearDeadline = !!(x.prazo && !isDone && typeof prazoMs==='number' && prazoMs<=86400000)
+      const histAlert = (changed && nearDeadline) ? { tipo:'alerta', autor: userLabel, data: today, data_hora_evento: nowIso, mensagem: 'Prazo menor que 24h', id_demanda: x.id } : null
+      const shouldAutoPost = !!(changed && ((String(status||'').toLowerCase().includes('aprov')) || (String(status||'').toLowerCase().includes('conclu'))) && appSettings.autoPostMLabs)
+      const histMlabs = shouldAutoPost ? { tipo:'mlabs', autor: userLabel, data: today, data_hora_evento: nowIso, mensagem: 'Postagem agendada via mLabs', id_demanda: x.id } : null
+      const historico = histItem ? [
+        histItem,
+        ...(histAlert ? [histAlert] : []),
+        ...(histMlabs ? [histMlabs] : []),
+        ...(x.historico||[])
+      ] : (x.historico||[])
       const nextFeedback = (changed && isFeedback && !x.dataFeedback) ? today : x.dataFeedback
-      return { ...x, status, revisoes, dataConclusao, dataCriacao, dataFeedback: nextFeedback, historico, tempoProducaoMs, startedAt, finishedAt }
+      const leadTotalMin = (historico||[]).filter(h=> h.tipo==='status' && h.duracao_em_minutos!=null).reduce((a,b)=> a + (b.duracao_em_minutos||0), 0)
+      const leadPorFase = (()=>{ const acc={}; (historico||[]).forEach(h=>{ if(h.tipo==='status' && h.duracao_em_minutos!=null){ const k=(h.status_anterior||h.de||'Aberta')||'Aberta'; acc[k]=(acc[k]||0)+(h.duracao_em_minutos||0) } }); return acc })()
+      const slaNetMs = (()=>{ if(!slaStartAt) return 0; const end = (slaStopAt ? Date.parse(slaStopAt) : nowMs); const start = Date.parse(slaStartAt); if(isNaN(start)||isNaN(end)) return 0; return Math.max(0, end - start - slaPauseMs) })()
+      const slaOk = (()=>{ if(!dataConclusao || !x.prazo) return null; try { return String(dataConclusao) <= String(x.prazo) } catch { return null } })()
+      const previsaoIA = calcPrevisaoIA(prev, { ...x, status })
+      return { ...x, status, revisoes, dataConclusao, dataCriacao, dataFeedback: nextFeedback, historico, tempoProducaoMs, startedAt, finishedAt, previsaoIA, fxBounceAt: changed ? nowMs : (x.fxBounceAt||0), slaStartAt, slaStopAt, slaPauseMs, pauseStartedAt, slaNetMs, slaOk, leadTotalMin, leadPorFase }
     }))
-    const found = demandas.find(x=>x.id===id)
+    const found = demandas.find(x=> String(x.id)===String(id))
     if (apiEnabled && found) {
-      await api.updateDemanda(id, { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, dataFeedback: ((found.status!==status && String(status||'').toLowerCase().includes('feedback')) && !found.dataFeedback) ? today : found.dataFeedback, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: [{ tipo:'status', autor: userLabel, data: today, de: found.status, para: status }, ...(found.historico||[]) ], tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.finishedAt })
+      const prevStatusEvent = (found.historico||[]).find(ev=> ev.tipo==='status')
+      const prevTs = prevStatusEvent?.data_hora_evento ? Date.parse(prevStatusEvent.data_hora_evento) : (prevStatusEvent?.data ? Date.parse(`${prevStatusEvent.data}T00:00:00Z`) : null)
+      const nowIso = new Date().toISOString()
+      const durMin = (found.status!==status && prevTs) ? Math.round((Date.now() - prevTs)/60000) : null
+      const prazoMs = (()=>{ if(!found.prazo) return null; const [y,m,d]=String(found.prazo).split('-').map(Number); const end=new Date(y,(m||1)-1,(d||1)); end.setHours(0,0,0,0); const start=new Date(); start.setHours(0,0,0,0); return end - start })()
+      const nearDeadline = !!(found.prazo && !(String(status||'').toLowerCase().includes('concluida') || status==='Concluída') && typeof prazoMs==='number' && prazoMs<=86400000)
+      const histItem = { tipo:'status', autor: userLabel, data: today, data_hora_evento: nowIso, status_anterior: found.status, status_novo: status, duracao_em_minutos: durMin, responsavel: userLabel, id_demanda: found.id, de: found.status, para: status }
+      const histAlert = nearDeadline ? { tipo:'alerta', autor: userLabel, data: today, data_hora_evento: nowIso, mensagem: 'Prazo menor que 24h', id_demanda: found.id } : null
+      const shouldAutoPost = !!(((String(status||'').toLowerCase().includes('aprov')) || (String(status||'').toLowerCase().includes('conclu'))) && appSettings.autoPostMLabs)
+      const histMlabs = shouldAutoPost ? { tipo:'mlabs', autor: userLabel, data: today, data_hora_evento: nowIso, mensagem: 'Postagem agendada via mLabs', id_demanda: found.id } : null
+      const histArr = [
+        histItem,
+        ...(histAlert ? [histAlert] : []),
+        ...(histMlabs ? [histMlabs] : []),
+        ...(found.historico||[])
+      ]
+      await api.updateDemanda(String(id), { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, dataFeedback: ((found.status!==status && String(status||'').toLowerCase().includes('feedback')) && !found.dataFeedback) ? today : found.dataFeedback, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: histArr, tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.finishedAt, slaStartAt: found.slaStartAt, slaStopAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.slaStopAt, slaPauseMs: found.slaPauseMs, pauseStartedAt: found.pauseStartedAt, slaNetMs: found.slaNetMs, slaOk: found.slaOk, leadTotalMin: found.leadTotalMin, leadPorFase: found.leadPorFase })
+      try { await addDoc(collection(db, 'historico_status'), histItem) } catch {}
     } else if (db && found) {
-      try { await updateDoc(doc(db, 'demandas', String(id)), { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, dataFeedback: ((found.status!==status && String(status||'').toLowerCase().includes('feedback')) && !found.dataFeedback) ? today : found.dataFeedback, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: [{ tipo:'status', autor: userLabel, data: today, de: found.status, para: status }, ...(found.historico||[]) ], tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.finishedAt }) } catch {}
+      try {
+        const prevStatusEvent = (found.historico||[]).find(ev=> ev.tipo==='status')
+        const prevTs = prevStatusEvent?.data_hora_evento ? Date.parse(prevStatusEvent.data_hora_evento) : (prevStatusEvent?.data ? Date.parse(`${prevStatusEvent.data}T00:00:00Z`) : null)
+        const nowIso = new Date().toISOString()
+        const durMin = (found.status!==status && prevTs) ? Math.round((Date.now() - prevTs)/60000) : null
+        const prazoMs = (()=>{ if(!found.prazo) return null; const [y,m,d]=String(found.prazo).split('-').map(Number); const end=new Date(y,(m||1)-1,(d||1)); end.setHours(0,0,0,0); const start=new Date(); start.setHours(0,0,0,0); return end - start })()
+        const nearDeadline = !!(found.prazo && !(String(status||'').toLowerCase().includes('concluida') || status==='Concluída') && typeof prazoMs==='number' && prazoMs<=86400000)
+        const histItem = { tipo:'status', autor: userLabel, data: today, data_hora_evento: nowIso, status_anterior: found.status, status_novo: status, duracao_em_minutos: durMin, responsavel: userLabel, id_demanda: found.id, de: found.status, para: status }
+        const histAlert = nearDeadline ? { tipo:'alerta', autor: userLabel, data: today, data_hora_evento: nowIso, mensagem: 'Prazo menor que 24h', id_demanda: found.id } : null
+        const shouldAutoPost = !!(((String(status||'').toLowerCase().includes('aprov')) || (String(status||'').toLowerCase().includes('conclu'))) && appSettings.autoPostMLabs)
+        const histMlabs = shouldAutoPost ? { tipo:'mlabs', autor: userLabel, data: today, data_hora_evento: nowIso, mensagem: 'Postagem agendada via mLabs', id_demanda: found.id } : null
+        const histArr = [
+          histItem,
+          ...(histAlert ? [histAlert] : []),
+          ...(histMlabs ? [histMlabs] : []),
+          ...(found.historico||[])
+        ]
+        await updateDoc(doc(db, 'demandas', String(id)), { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, dataFeedback: ((found.status!==status && String(status||'').toLowerCase().includes('feedback')) && !found.dataFeedback) ? today : found.dataFeedback, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: histArr, tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.finishedAt, slaStartAt: found.slaStartAt, slaStopAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.slaStopAt, slaPauseMs: found.slaPauseMs, pauseStartedAt: found.pauseStartedAt, slaNetMs: found.slaNetMs, slaOk: found.slaOk, leadTotalMin: found.leadTotalMin, leadPorFase: found.leadPorFase })
+        try { await addDoc(collection(db, 'historico_status'), histItem) } catch {}
+      } catch {}
+    }
+  }
+  const onAddComment = async (id, c, h) => {
+    setDemandas(prev=> prev.map(x=> {
+      if (String(x.id)!==String(id)) return x
+      const comentarios = [c, ...(x.comentarios||[])]
+      const notif = (Array.isArray(c.mentions) && c.mentions.length>0) ? { tipo:'notificacao', autor: userLabel, data: c.data, data_hora_evento: new Date().toISOString(), mensagem: 'Você foi mencionado', mentions: c.mentions, id_demanda: x.id } : null
+      const historico = notif ? [notif, h, ...(x.historico||[])] : [h, ...(x.historico||[])]
+      return { ...x, comentarios, historico, fxSavedAt: Date.now() }
+    }))
+    const found = demandas.find(x=> String(x.id)===String(id))
+    if (apiEnabled && found) {
+      const comentarios = [c, ...(found.comentarios||[])]
+      const notif = (Array.isArray(c.mentions) && c.mentions.length>0) ? { tipo:'notificacao', autor: userLabel, data: c.data, data_hora_evento: new Date().toISOString(), mensagem: 'Você foi mencionado', mentions: c.mentions, id_demanda: found.id } : null
+      const historico = notif ? [notif, h, ...(found.historico||[])] : [h, ...(found.historico||[])]
+      await api.updateDemanda(String(id), { ...found, comentarios, historico })
+    } else if (db && found) {
+      try {
+        const notif = (Array.isArray(c.mentions) && c.mentions.length>0) ? { tipo:'notificacao', autor: userLabel, data: c.data, data_hora_evento: new Date().toISOString(), mensagem: 'Você foi mencionado', mentions: c.mentions, id_demanda: found.id } : null
+        const histArr = notif ? [notif, h, ...(found.historico||[])] : [h, ...(found.historico||[])]
+        await updateDoc(doc(db, 'demandas', String(id)), { comentarios: [c, ...(found.comentarios||[])], historico: histArr })
+      } catch {}
+    }
+  }
+  const onMoveToGroup = async (id, campo, valor) => {
+    const today = hojeISO()
+    setDemandas(prev=> prev.map(x=> {
+      if (String(x.id)!==String(id)) return x
+      const histItem = { tipo:'grupo', autor: userLabel, data: today, campo: campo, valor: valor, id_demanda: x.id }
+      const historico = [histItem, ...(x.historico||[])]
+      return { ...x, [campo]: valor, historico }
+    }))
+    const found = demandas.find(x=> String(x.id)===String(id))
+    if (apiEnabled && found) {
+      const histItem = { tipo:'grupo', autor: userLabel, data: today, campo: campo, valor: valor, id_demanda: found.id }
+      await api.updateDemanda(String(id), { ...found, [campo]: valor, historico: [histItem, ...(found.historico||[])] })
+    } else if (db && found) {
+      try {
+        const histItem = { tipo:'grupo', autor: userLabel, data: today, campo: campo, valor: valor, id_demanda: found.id }
+        await updateDoc(doc(db, 'demandas', String(id)), { ...found, [campo]: valor, historico: [histItem, ...(found.historico||[])] }) }
+      catch {}
     }
   }
   const onDelete = async (id) => {
-    setDemandas(prev=> prev.filter(x=> x.id!==id))
+    setDemandas(prev=> prev.map(x=> x.id===id ? ({ ...x, fxDeleting:true }) : x))
+    setTimeout(()=>{ setDemandas(prev=> prev.filter(x=> x.id!==id)) }, 180)
     if (apiEnabled) await api.deleteDemanda(id)
     else if (db) { try { await deleteDoc(doc(db, 'demandas', String(id))) } catch {} }
   }
+
+  const pushAlert = async (id, mensagem) => {
+    const today = hojeISO()
+    let updatedItem = null
+    setDemandas(prev=> prev.map(x=>{
+      if (x.id!==id) return x
+      const exists = (x.historico||[]).some(h=> h.tipo==='alerta' && h.data===today && h.mensagem===mensagem)
+      if (exists) { updatedItem = x; return x }
+      const hist = { tipo:'alerta', autor: userLabel, data: today, data_hora_evento: new Date().toISOString(), mensagem, id_demanda: x.id }
+      const next = { ...x, historico: [hist, ...(x.historico||[])] }
+      updatedItem = next
+      return next
+    }))
+    const found = updatedItem || demandas.find(x=> x.id===id)
+    if (!found) return
+    if (apiEnabled) {
+      const hist = { tipo:'alerta', autor: userLabel, data: today, data_hora_evento: new Date().toISOString(), mensagem, id_demanda: found.id }
+      await api.updateDemanda(id, { ...found, historico: [hist, ...(found.historico||[])] })
+    } else if (db) {
+      try {
+        const hist = { tipo:'alerta', autor: userLabel, data: today, data_hora_evento: new Date().toISOString(), mensagem, id_demanda: found.id }
+        await updateDoc(doc(db, 'demandas', String(id)), { ...found, historico: [hist, ...(found.historico||[])] })
+      } catch {}
+    }
+  }
+
+  useEffect(()=>{
+    const timer = setInterval(()=>{
+      const today = hojeISO()
+      const active = demandas.filter(x=> !isDoneStatus(x.status))
+      const porDesigner = active.reduce((m,x)=>{ const d=x.designer||'—'; m[d]=(m[d]||0)+1; return m }, {})
+      active.forEach(x=>{
+        if (x.prazo) {
+          try {
+            const [y,m,d]=String(x.prazo).split('-').map(Number)
+            const end=new Date(y,(m||1)-1,(d||1)); end.setHours(0,0,0,0)
+            const start=new Date(); start.setHours(0,0,0,0)
+            if ((end-start)<=86400000) pushAlert(x.id, 'Prazo menor que 24h')
+          } catch {}
+        }
+        const lastStatus = (x.historico||[]).find(h=> h.tipo==='status')
+        if (lastStatus?.data_hora_evento || lastStatus?.data) {
+          const ts = lastStatus.data_hora_evento ? Date.parse(lastStatus.data_hora_evento) : Date.parse(`${lastStatus.data}T00:00:00Z`)
+          if (!isNaN(ts) && (Date.now()-ts)>= (48*3600000)) pushAlert(x.id, 'Demanda estagnada há 48h')
+        }
+        const dname = x.designer||'—'
+        const ativos = porDesigner[dname]||0
+        const capPct = Math.min(100, Math.round((ativos/4)*100))
+        if (capPct>=100) pushAlert(x.id, `Capacidade 100% para ${dname} • Risco máximo`)
+        else if (capPct>=85) pushAlert(x.id, `Designer ${dname} está com ${capPct}% da capacidade utilizada. Risco de atraso.`)
+        if ((x.revisoes||0)>=2) pushAlert(x.id, 'Retrabalho acima do limite')
+      })
+      const concluidos = demandas.filter(x=> isDoneStatus(x.status))
+      const slaOk = concluidos.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length
+      const slaTot = concluidos.filter(x=> x.prazo && x.dataConclusao).length
+      const slaPct = Math.round(100 * (slaOk/Math.max(1, slaTot)))
+      if (slaPct<80) active.forEach(x=> pushAlert(x.id, 'SLA geral abaixo de 80%'))
+    }, 60000)
+    return ()=> clearInterval(timer)
+  }, [demandas])
   const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, dataFeedback, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) => {
     const ensureCad = async () => {
       if (!db) return
@@ -1039,22 +1433,29 @@ export default function App() {
     }
     if (modalMode==='edit' && editing) {
       const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, comentarios: comentarios ?? editing.comentarios, historico: historico ?? editing.historico, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, dataFeedback: dataFeedback || editing.dataFeedback, plataforma, prazo, origem, campanha }
-      setDemandas(prev=> prev.map(x=> x.id===editing.id ? updated : x))
+      const updatedView = { ...updated, fxSavedAt: Date.now() }
+      setDemandas(prev=> prev.map(x=> x.id===editing.id ? updatedView : x))
       if (apiEnabled) await api.updateDemanda(editing.id, updated)
       else if (db) { try { await updateDoc(doc(db, 'demandas', String(editing.id)), updated) } catch {} }
       await ensureCad()
     } else {
       const hoje = hojeISO()
-      const inicial = { tipo:'status', autor: userLabel, data: hoje, de: '', para: 'Aberta' }
-      const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: hoje, dataFeedback: undefined, status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null, finishedAt: null, revisoes: 0, createdBy: userLabel }
+      const nowIso = new Date().toISOString()
+      const inicial = { tipo:'status', autor: userLabel, data: hoje, data_hora_evento: nowIso, status_anterior: '', status_novo: 'Aberta', duracao_em_minutos: null, responsavel: userLabel, id_demanda: null, de: '', para: 'Aberta' }
+      const previsaoIA = calcPrevisaoIA(demandas, { designer, tipoMidia, prazo, revisoes: 0, plataforma, origem })
+      const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: hoje, dataFeedback: undefined, status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null, finishedAt: null, revisoes: 0, createdBy: userLabel, previsaoIA, slaStartAt: null, slaStopAt: null, slaPauseMs: 0, pauseStartedAt: null, slaNetMs: 0, slaOk: null, leadTotalMin: 0, leadPorFase: {} }
       if (apiEnabled) {
         const saved = await api.createDemanda(novo)
-        setDemandas(prev=> [...prev, { ...novo, id: saved?.id ?? proxId(prev) }])
+        setDemandas(prev=> [...prev, { ...novo, id: saved?.id ?? proxId(prev), fxNewAt: Date.now() }])
       } else {
         const nextId = proxId(demandas)
-        setDemandas(prev=> [...prev, { ...novo, id: nextId }])
+        setDemandas(prev=> [...prev, { ...novo, id: nextId, fxNewAt: Date.now() }])
         if (db) {
-          try { await setDoc(doc(db, 'demandas', String(nextId)), { ...novo, id: nextId, createdAt: serverTimestamp() }) } catch {}
+          try {
+            await setDoc(doc(db, 'demandas', String(nextId)), { ...novo, id: nextId, createdAt: serverTimestamp() })
+            const histFirst = { ...inicial, id_demanda: nextId }
+            try { await addDoc(collection(db, 'historico_status'), histFirst) } catch {}
+          } catch {}
         }
       }
       await ensureCad()
@@ -1086,7 +1487,7 @@ export default function App() {
   return (
     <div className="layout">
       {user ? <Sidebar route={route} setRoute={setRoute} allowedRoutes={allowedRoutes} /> : null}
-      <div className={`content ${user?'':'no-sidebar'}`}>
+      <div className={`content ${user?'':'no-sidebar'} page`}>
         <div className="app">
           {user ? <Header onNew={onNew} view={view} setView={setView} showNew={!!user} user={user} onLogout={logout} setRoute={setRoute} /> : null}
           
@@ -1094,34 +1495,42 @@ export default function App() {
             <LoginView onLogin={login} />
           )}
           {user && route==='dashboard' && (
-            <DashboardView demandas={demandas} items={dashItems} designers={dashDesigners} setView={setView} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} compact={compact} calRef={calRef} setCalRef={setCalRef} />
+            <DashboardView demandas={demandas} items={dashItems} designers={dashDesigners} setView={setView} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} compact={compact} calRef={calRef} setCalRef={setCalRef} loading={loading} />
           )}
           {user && route==='demandas' && (
             <div className="demandas-layout">
               <div className="sidebar-col">
                 <FilterBar filtros={filtros} setFiltros={setFiltros} designers={designersVisible} showSearch={false} statusCounts={statusCounts} />
               </div>
-              <div className="content-col">
-                <div className="top-search">
-                  <input className="search" placeholder="Pesquisar demandas..." value={filtros.q||''} onChange={e=> setFiltros(prev=> ({ ...prev, q: e.target.value }))} />
-                  <button className="primary" onClick={onNew} disabled={!canCreate}><span className="icon"><Icon name="plus" /></span><span>Nova demanda</span></button>
-                </div>
-                <div className="table-scroll">
-                  <TableView items={itemsVisible.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsVisible.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsVisible.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsVisible.length)} total={itemsVisible.length} compact={compact} canEdit={!!user} />
-                </div>
-                <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} designers={designersVisible} cadPlataformas={cadPlataformas} onDelete={onDelete} userLabel={userLabel} canDelete={canDelete} />
-                <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designersVisible} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} cadPlataformas={cadPlataformas} cadTipos={cadTipos} origens={ORIGENS} campanhas={campanhas} />
+          <div className="content-col">
+            <div className="top-search">
+              <input className="search" placeholder="Pesquisar demandas..." value={filtros.q||''} onChange={e=> setFiltros(prev=> ({ ...prev, q: e.target.value }))} />
+              <button className="primary" onClick={onNew} disabled={!canCreate}><span className="icon"><Icon name="plus" /></span><span>Nova demanda</span></button>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginLeft:'auto'}}>
+                <ViewButtonsInner view={view} setView={setView} />
               </div>
+            </div>
+            {view==='table' && (
+              <div className="table-scroll">
+                <TableView items={itemsVisible.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsVisible.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsVisible.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsVisible.length)} total={itemsVisible.length} compact={compact} canEdit={!!user} loading={loading} />
+              </div>
+            )}
+            {view==='calendar' && (
+            <CalendarView items={itemsVisible} refDate={calRef} />
+            )}
+            <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} designers={designersVisible} cadPlataformas={cadPlataformas} onDelete={onDelete} userLabel={userLabel} canDelete={canDelete} onAddComment={onAddComment} cadOrigens={cadOrigens} />
+            <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designersVisible} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} cadTipos={cadTipos} origens={cadOrigens} campanhas={campanhas} />
+          </div>
             </div>
           )}
           {user && route==='config' && (
-            <ConfigView themeVars={themeVars} setThemeVars={setThemeVars} onReset={onResetSystem} />
+            <ConfigView themeVars={themeVars} setThemeVars={setThemeVars} onReset={onResetSystem} appSettings={appSettings} setAppSettings={setAppSettings} />
           )}
           {user && route==='cadastros' && (
-            <CadastrosView cadStatus={cadStatus} setCadStatus={setCadStatus} cadTipos={cadTipos} setCadTipos={setCadTipos} cadPlataformas={cadPlataformas} setCadPlataformas={setCadPlataformas} cadStatusColors={cadStatusColors} setCadStatusColors={setCadStatusColors} />
+            <CadastrosView cadStatus={cadStatus} setCadStatus={setCadStatus} cadTipos={cadTipos} setCadTipos={setCadTipos} cadOrigens={cadOrigens} setCadOrigens={setCadOrigens} cadStatusColors={cadStatusColors} setCadStatusColors={setCadStatusColors} />
           )}
           {user && route==='relatorios' && (
-            <ReportsView demandas={demandas} items={itemsVisible} designers={designersVisible} filtros={filtros} setFiltros={setFiltros} />
+            <ReportsView demandas={demandas} items={itemsVisible} designers={designersVisible} filtros={filtros} setFiltros={setFiltros} loading={loading} />
           )}
           {user && route==='usuarios' && (
             <UsersView users={readUsers()} onCreate={(nu)=>{ const list=readUsers(); writeUsers([...list, nu]) }} onDelete={(username)=>{ const list=readUsers().filter(u=>u.username!==username); writeUsers(list) }} onUpdate={(username, patch)=>{ const list=readUsers().map(u=> u.username===username ? { ...u, ...patch } : u); writeUsers(list) }} role={role} />
@@ -1183,6 +1592,7 @@ function UsersView({ users, onCreate, onDelete, onUpdate, role }) {
   }
   const togglePage = async (u, key)=>{ const cur=u.pages||{}; const patch = { pages: { ...cur, [key]: !(cur[key]!==false) } }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } else { onUpdate(u.username, patch); refresh() } }
   const toggleAction = async (u, key)=>{ const cur=u.actions||{}; const patch = { actions: { ...cur, [key]: !(cur[key]!==false) } }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } else { onUpdate(u.username, patch); refresh() } }
+  const updateCargo = async (u, value)=>{ const patch = { cargo: value }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } else { onUpdate(u.username, patch); refresh() } }
   return (
     <div className="panel users-panel">
       <div className="tabs"><button className="tab active">Usuários</button></div>
@@ -1231,7 +1641,15 @@ function UsersView({ users, onCreate, onDelete, onUpdate, role }) {
               <td>{u.username}</td>
               <td>{u.name||u.username}</td>
               <td>{u.role||'comum'}</td>
-              <td>{u.cargo||''}</td>
+              <td>
+                <select value={u.cargo||''} onChange={e=> updateCargo(u, e.target.value)}>
+                  <option value="">Selecione</option>
+                  <option value="Designer">Designer</option>
+                  <option value="Social Media">Social Media</option>
+                  <option value="Gerente">Gerente</option>
+                  <option value="Externo">Externo</option>
+                </select>
+              </td>
               <td>
                 <div className="chips">
                   {['dashboard','demandas','config','cadastros','relatorios','usuarios'].map(k=> (
@@ -1266,7 +1684,7 @@ function UsersView({ users, onCreate, onDelete, onUpdate, role }) {
  
 
 
-function ConfigView({ themeVars, setThemeVars, onReset }) {
+function ConfigView({ themeVars, setThemeVars, onReset, appSettings, setAppSettings }) {
   const [localVars, setLocalVars] = useState(themeVars||{})
   const [novoNome, setNovoNome] = useState('')
   const [novoValor, setNovoValor] = useState('')
@@ -1361,6 +1779,12 @@ function ConfigView({ themeVars, setThemeVars, onReset }) {
             <button className="primary" type="button" onClick={addVar}>Adicionar</button>
           </div>
         </div>
+        <div className="card" style={{gridColumn:'1 / -1'}}>
+          <div className="title">Integrações</div>
+          <div className="form-row"><label>Auto‑post via mLabs</label>
+            <input type="checkbox" checked={!!appSettings.autoPostMLabs} onChange={e=> setAppSettings(prev=> ({ ...prev, autoPostMLabs: e.target.checked }))} />
+          </div>
+        </div>
       </div>
       <div className="modal-footer">
         <button className="danger" type="button" onClick={onReset}>Resetar sistema</button>
@@ -1391,9 +1815,21 @@ function FilterBar({ filtros, setFiltros, designers, showSearch, statusCounts })
   const keyOf = s => s==='Hoje'?'today': s==='Semana'?'week': s==='Mês'?'month': s==='Mês passado'?'lastmonth':'last30'
   const designersKeys = ['Todos', ...designers]
   const colorOf = (s) => {
+    if (s==='Pendente') return 'gray'
+    if (s==='Em produção') return 'yellow'
     if (s==='Revisar') return 'red'
     if (s==='Aguardando Feedback') return 'purple'
-    if (s==='Aprovada' || s==='Concluida') return 'green'
+    if (s==='Aprovada') return 'green-approve'
+    if (s==='Concluida' || s==='Concluída') return 'green-dark'
+    return ''
+  }
+  const emojiOf = (s) => {
+    if (s==='Pendente') return '⏳'
+    if (s==='Em produção') return '🎨'
+    if (s==='Aguardando Feedback') return '💬'
+    if (s==='Revisar') return '🛠'
+    if (s==='Aprovada') return '✅'
+    if (s==='Concluida' || s==='Concluída') return '🔒'
     return ''
   }
   return (
@@ -1424,7 +1860,7 @@ function FilterBar({ filtros, setFiltros, designers, showSearch, statusCounts })
           <div className="filter-title">Status</div>
             {FIXED_STATUS.map(s=> (
               <button key={s} className={`btn-md ${colorOf(s)} ${((filtros.status||'')===s)?'active':''}`} onClick={()=> setFiltros(prev=> ({ ...prev, status: prev.status===s ? undefined : s }))}>
-                <span className="icon"><Icon name="dot" /></span><span>{s}</span>{(statusCounts?.[s]>0) ? (<span className="alert-count">{statusCounts[s]}</span>) : null}
+                <span className="emoji">{emojiOf(s)}</span><span>{s}</span>{(statusCounts?.[s]>0) ? (<span className="alert-count">{statusCounts[s]}</span>) : null}
               </button>
             ))}
         </div>
@@ -1442,7 +1878,7 @@ function FilterBar({ filtros, setFiltros, designers, showSearch, statusCounts })
   )
 }
 
-function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, cadStatus, onDelete, onDuplicate, compact, calRef, setCalRef }) {
+function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, cadStatus, onDelete, onDuplicate, compact, calRef, setCalRef, loading }) {
   const total = items.length
   const concluidos = items.filter(x=> isDoneStatus(x.status))
   const produTotal = concluidos.length
@@ -1467,6 +1903,19 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
     concluidos.forEach(x=>{ const d=x.designer||'—'; per[d]=(per[d]||0)+1 })
     const ideal = capacityPerDay * daysInPeriod
     return designers.map(d=>{ const real = per[d]||0; const used = ideal ? Math.round(100*(real/ideal)) : 0; const status = ideal===0 ? 'Verde' : used<=90?'Verde': used<=110?'Amarelo':'Vermelho'; return { designer:d, ideal, real, used, status } })
+  })()
+  const ativosPorDesigner = (()=>{ const per={}; items.forEach(x=>{ if (!isDoneStatus(x.status)) { const d=x.designer||'—'; per[d]=(per[d]||0)+1 } }); return per })()
+  const mensagensIA = (()=>{
+    const msgs = []
+    workloadRows.forEach(r=>{
+      if (r.used>=110) msgs.push(`Designer ${r.designer} sobrecarregado (${r.used}%) • risco de atraso`)
+      else if (r.used>=90) msgs.push(`Designer ${r.designer} com carga alta (${r.used}%) • monitorar prazos`)
+      const ativos = ativosPorDesigner[r.designer]||0
+      if (ativos >= (capacityPerDay*2)) msgs.push(`Designer ${r.designer} com ${ativos} demandas ativas • priorizar distribuição`)
+    })
+    const criticos = items.filter(x=> { if (isDoneStatus(x.status)) return false; if(!x.prazo) return false; const [y,m,d]=String(x.prazo).split('-').map(Number); const end=new Date(y,(m||1)-1,(d||1)); const start=new Date(); start.setHours(0,0,0,0); end.setHours(0,0,0,0); return (end-start)<=86400000 })
+    criticos.slice(0,5).forEach(x=> msgs.push(`Prazo crítico: ${x.titulo} (${x.designer||'—'})`))
+    return msgs
   })()
   const conclPorDesigner = (()=>{ const m=new Map(); concluidos.forEach(x=> m.set(x.designer||'—',(m.get(x.designer||'—')||0)+1)); return Array.from(m.entries()).map(([designer,qty])=>({designer,qty})) })()
   const tempoEntregaStats = (()=>{
@@ -1498,6 +1947,18 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
     items.forEach(x=>{ if (x.startedAt) { try{ const dt=new Date(x.startedAt); const h=dt.getHours(); if(h>=8 && h<=18){ const d=x.designer||'—'; const idx=h-8; if(per[d]) per[d][idx]++ } }catch{} } })
     return { horas, per }
   })()
+  if (loading) {
+    return (
+      <div className="dashboard">
+        <div className="exec-summary">
+          {Array.from({length:5}).map((_,i)=> (<div key={i} className="skeleton row"></div>))}
+        </div>
+        <div className="section-grid">
+          {Array.from({length:2}).map((_,i)=> (<div key={i} className="skeleton card" style={{height:160}}></div>))}
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="dashboard">
       <div className="exec-summary">
@@ -1547,6 +2008,14 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
             </tbody>
           </table>
         </div>
+        <div className="section-card">
+          <div className="widget-title">ASSISTENTE IA</div>
+          <div className="insights-grid">
+            {mensagensIA.map((t,i)=> (
+              <div key={i} className="insight-card" style={{opacity:0,animation:'pageIn .6s forwards'}}><div className="insight-ico">★</div><div className="insight-text">{t}</div></div>
+            ))}
+          </div>
+        </div>
       </div>
       <div className="section-grid">
         <div className="section-card">
@@ -1577,7 +2046,7 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
   )
 }
 
-function ReportsView({ demandas, items, designers, filtros, setFiltros }) {
+function ReportsView({ demandas, items, designers, filtros, setFiltros, loading }) {
   const periodLabel = ['Hoje','Semana','Mês','Mês passado']
   const keyOf = s => s==='Hoje'?'today': s==='Semana'?'week': s==='Mês'?'month':'lastmonth'
   const [period, setPeriod] = useState('month')
@@ -1649,6 +2118,18 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros }) {
   const porCampanha = (()=>{ const per={}; items.forEach(x=>{ const c=x.campanha||'—'; per[c]=(per[c]||0)+1 }); return Object.entries(per).map(([campanha,q])=> ({ campanha, q })).sort((a,b)=> b.q-a.q) })()
   const retrabCampanha = (()=>{ const per={}; items.forEach(x=>{ const c=x.campanha||'—'; const r=x.revisoes||0; const cur=per[c]||{ rTot:0, cnt:0 }; per[c]={ rTot:cur.rTot+r, cnt:cur.cnt+1 } }); return Object.entries(per).map(([campanha,v])=> ({ campanha, porPeca:+((v.rTot/(v.cnt||1)).toFixed(2)) })).sort((a,b)=> b.porPeca-a.porPeca) })()
   const slaCampanha = (()=>{ const per={}; items.forEach(x=>{ if (x.campanha) { const c=x.campanha; const ok=!!(x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo); const tot=!!(x.prazo && x.dataConclusao); const cur=per[c]||{ ok:0, total:0 }; per[c]={ ok:cur.ok+(ok?1:0), total:cur.total+(tot?1:0) } } }); return Object.entries(per).map(([campanha,v])=> ({ campanha, sla: Math.round(100*((v.ok/(v.total||1)))) })) })()
+  if (loading) {
+    return (
+      <div className="reports">
+        <div className="reports-toolbar">
+          <div className="skeleton row" style={{width:'50%'}}></div>
+        </div>
+        <div className="reports-grid">
+          {Array.from({length:3}).map((_,i)=> (<div key={i} className="skeleton card" style={{height:180}}></div>))}
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="reports">
       <div className="reports-toolbar">
@@ -1764,6 +2245,16 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros }) {
             {porCanal.map(c=> (<span key={c.origem} className="chip">{c.origem}: {c.pct}%</span>))}
           </div>
           <div className="section-divider" />
+          {(()=>{ const total = porCanal.reduce((a,b)=> a+b.q,0)||1; let start=0; const r=50; const cx=60, cy=60; const segs = porCanal.slice(0,5).map((c,i)=>{ const frac=c.q/total; const a0=start*2*Math.PI; const a1=(start+frac)*2*Math.PI; start+=frac; const x0=cx + r*Math.cos(a0); const y0=cy + r*Math.sin(a0); const x1=cx + r*Math.cos(a1); const y1=cy + r*Math.sin(a1); const large = frac>0.5 ? 1 : 0; const path = `M ${cx} ${cy} L ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x1} ${y1} Z`; const colors=['#4DA3FF','#BCD200','#FF5E5E','#9B59B6','#2ECC71']; return { path, color: colors[i%colors.length], label: `${c.origem} ${c.pct}%` } }); return (
+            <div className="pie-wrap">
+              <svg width="140" height="140" className="pie-chart">
+                {segs.map((s,i)=> (<path key={i} d={s.path} fill={s.color} />))}
+              </svg>
+              <div className="pie-legend">
+                {segs.map((s,i)=> (<div key={i} className="legend-item"><span className="legend-dot" style={{background:s.color}} />{s.label}</div>))}
+              </div>
+            </div>
+          ) })()}
           <table className="report-matrix">
             <thead><tr><th>Canal</th><th>Revisões/peça</th></tr></thead>
             <tbody>
