@@ -805,11 +805,14 @@ export default function App() {
       api.listCadastros('designers').then(arr=> Array.isArray(arr) && setCadDesigners(arr))
       api.listCadastros('plataformas').then(arr=> Array.isArray(arr) && setCadPlataformas(arr))
     } else if (db) {
-      getDocs(collection(db, 'demandas')).then(snap => {
-        const arr = []
-        snap.forEach(d => arr.push({ id: d.id, ...d.data() }))
-        setDemandas(arr)
-      }).catch(()=>{})
+      let unsubDemandas = null
+      try {
+        unsubDemandas = onSnapshot(collection(db, 'demandas'), snap => {
+          const arr = []
+          snap.forEach(d => arr.push({ id: d.id, ...d.data() }))
+          setDemandas(arr)
+        })
+      } catch {}
       const loadCad = async (col, setter) => {
         try { const snap = await getDocs(collection(db, col)); const arr=[]; snap.forEach(d=> arr.push(d.data()?.name || d.id)); setter(arr) } catch {}
       }
@@ -817,6 +820,7 @@ export default function App() {
       loadCad('cad_tipos', setCadTipos)
       loadCad('cad_designers', setCadDesigners)
       loadCad('cad_plataformas', setCadPlataformas)
+      return ()=>{ try { unsubDemandas && unsubDemandas() } catch {} }
     }
   },[])
   useEffect(()=>{
@@ -876,6 +880,9 @@ export default function App() {
     } else {
       const nextId = proxId(demandas)
       setDemandas(prev=> [...prev, { ...base, id: nextId }])
+      if (db) {
+        try { await setDoc(doc(db, 'demandas', String(nextId)), { ...base, id: nextId, createdAt: serverTimestamp() }) } catch {}
+      }
     }
   }
   const onStatus = async (id, status) => {
@@ -909,20 +916,24 @@ export default function App() {
       const historico = histItem ? [histItem, ...(x.historico||[])] : (x.historico||[])
       return { ...x, status, revisoes, dataConclusao, dataCriacao, historico, tempoProducaoMs, startedAt, finishedAt }
     }))
-    if (apiEnabled) {
-      const found = demandas.find(x=>x.id===id)
-      if (found) await api.updateDemanda(id, { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: [{ tipo:'status', autor: userLabel, data: today, de: found.status, para: status }, ...(found.historico||[]) ], tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.finishedAt })
+    const found = demandas.find(x=>x.id===id)
+    if (apiEnabled && found) {
+      await api.updateDemanda(id, { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: [{ tipo:'status', autor: userLabel, data: today, de: found.status, para: status }, ...(found.historico||[]) ], tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.finishedAt })
+    } else if (db && found) {
+      try { await updateDoc(doc(db, 'demandas', String(id)), { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: [{ tipo:'status', autor: userLabel, data: today, de: found.status, para: status }, ...(found.historico||[]) ], tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.finishedAt }) } catch {}
     }
   }
   const onDelete = async (id) => {
     setDemandas(prev=> prev.filter(x=> x.id!==id))
     if (apiEnabled) await api.deleteDemanda(id)
+    else if (db) { try { await deleteDoc(doc(db, 'demandas', String(id))) } catch {} }
   }
   const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) => {
     if (modalMode==='edit' && editing) {
       const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, comentarios: comentarios ?? editing.comentarios, historico: historico ?? editing.historico, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, plataforma, prazo, origem, campanha }
       setDemandas(prev=> prev.map(x=> x.id===editing.id ? updated : x))
       if (apiEnabled) await api.updateDemanda(editing.id, updated)
+      else if (db) { try { await updateDoc(doc(db, 'demandas', String(editing.id)), updated) } catch {} }
     } else {
       const hoje = hojeISO()
       const inicial = { tipo:'status', autor: userLabel, data: hoje, de: '', para: 'Aberta' }
@@ -934,7 +945,7 @@ export default function App() {
         const nextId = proxId(demandas)
         setDemandas(prev=> [...prev, { ...novo, id: nextId }])
         if (db) {
-          try { await addDoc(collection(db, 'demandas'), { ...novo, id: nextId, createdAt: serverTimestamp() }) } catch {}
+          try { await setDoc(doc(db, 'demandas', String(nextId)), { ...novo, id: nextId, createdAt: serverTimestamp() }) } catch {}
         }
       }
     }
