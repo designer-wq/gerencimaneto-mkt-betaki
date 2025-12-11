@@ -718,6 +718,26 @@ function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadPlat
   )
 }
 
+function AlertBar({ revisarCount, aprovadaCount, onShowRevisar, onShowAprovada }) {
+  if (!revisarCount && !aprovadaCount) return null
+  return (
+    <div className="alertbar">
+      {revisarCount>0 && (
+        <button className="alert-pill red" type="button" onClick={onShowRevisar}>
+          <span>Revisar</span>
+          <span className="alert-count">{revisarCount}</span>
+        </button>
+      )}
+      {aprovadaCount>0 && (
+        <button className="alert-pill green" type="button" onClick={onShowAprovada}>
+          <span>Aprovada</span>
+          <span className="alert-count">{aprovadaCount}</span>
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
   const [user, setUser] = useState(null)
   const [demandas, setDemandas] = useState(ler())
@@ -1033,6 +1053,7 @@ export default function App() {
       <div className={`content ${user?'':'no-sidebar'}`}>
         <div className="app">
           {user ? <Header onNew={onNew} view={view} setView={setView} showNew={!!user} user={user} onLogout={logout} setRoute={setRoute} /> : null}
+          {user ? <AlertBar revisarCount={revisarCount} aprovadaCount={aprovadaCount} onShowRevisar={onShowRevisar} onShowAprovada={onShowAprovada} /> : null}
           {!user && (
             <LoginView onLogin={login} />
           )}
@@ -1763,3 +1784,7 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros }) {
     </div>
   )
 }
+  const revisarCount = useMemo(()=> itemsVisible.filter(x=> /revisar/i.test(String(x.status||''))).length, [itemsVisible])
+  const aprovadaCount = useMemo(()=> itemsVisible.filter(x=> /aprovada/i.test(String(x.status||''))).length, [itemsVisible])
+  const onShowRevisar = ()=>{ setRoute('demandas'); setFiltros(prev=> ({ ...prev, status: 'Revisar' })) }
+  const onShowAprovada = ()=>{ setRoute('demandas'); setFiltros(prev=> ({ ...prev, status: 'Aprovada' })) }
