@@ -3,19 +3,7 @@ import { db, isFirebaseEnabled, auth, firebaseApp } from './firebase'
 import { collection, addDoc, serverTimestamp, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, query, where, onSnapshot } from 'firebase/firestore'
 import { getAuth, onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
-import { apiEnabled, api } from './api'
-const readLS = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)||'null'); return Array.isArray(v) ? v : def } catch { return def } }
-const readObj = (k, def) => { try { const v = JSON.parse(localStorage.getItem(k)||'null'); return v && typeof v === 'object' && !Array.isArray(v) ? v : def } catch { return def } }
-const writeLS = (k, v) => localStorage.setItem(k, JSON.stringify(v))
-const readUsers = () => { try { return JSON.parse(localStorage.getItem('users')||'[]') } catch { return [] } }
-const writeUsers = (arr) => localStorage.setItem('users', JSON.stringify(arr))
-const ensureAdminSeed = () => {
-  const list = readUsers()
-  if (!list.find(u=> u.username==='admin')) {
-    const admin = { username:'admin', name:'Administrador', role:'admin', password:'f3l1p3', pages:{ dashboard:true, demandas:true, config:true, cadastros:true, relatorios:true, usuarios:true }, actions:{ criar:true, excluir:true, visualizar:true } }
-    writeUsers([...list, admin])
-  }
-}
+/* Persistência local removida: Firebase apenas */
 
 const ESTADOS = ["Aberta", "Em Progresso", "Concluída"]
 const FIXED_STATUS = ["Pendente","Em produção","Aguardando Feedback","Aprovada","Revisar","Concluida"]
@@ -108,8 +96,7 @@ const hojeISO = () => {
   const d = new Date(); const z = n => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`
 }
-const ler = () => { try { return JSON.parse(localStorage.getItem('demandas')||'[]') } catch { return [] } }
-const gravar = arr => localStorage.setItem('demandas', JSON.stringify(arr))
+/* Listas locais de demandas removidas: carregadas via Firestore */
 const proxId = arr => {
   const nums = arr.map(x=> (typeof x.id==='number' ? x.id : Number(x.id)||0))
   return nums.length ? Math.max(...nums) + 1 : 1
@@ -904,8 +891,8 @@ function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadOrig
     else if (tab==='tipo') setCadTipos(arr)
     else setCadOrigens(arr)
   }
-  const addItem = async () => { const v = novo.trim(); if (!v) return; if (lista.includes(v)) return; const arr = [...lista, v]; setLista(arr); setNovo(''); if (tab==='status') setCadStatusColors(prev=> ({ ...prev, [v]: novoCor })); if (apiEnabled) await api.addCadastro(tab==='status'?'status':tab==='tipo'?'tipos':'origens', v); else if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':'cad_origens'; try { await setDoc(doc(db, col, v), { name: v }) } catch {} } }
-  const removeItem = async (v) => { const arr = lista.filter(x=>x!==v); setLista(arr); if (apiEnabled) await api.removeCadastro(tab==='status'?'status':tab==='tipo'?'tipos':'origens', v); else if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':'cad_origens'; try { await deleteDoc(doc(db, col, v)) } catch {} } }
+  const addItem = async () => { const v = novo.trim(); if (!v) return; if (lista.includes(v)) return; const arr = [...lista, v]; setLista(arr); setNovo(''); if (tab==='status') setCadStatusColors(prev=> ({ ...prev, [v]: novoCor })); if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':'cad_origens'; try { await setDoc(doc(db, col, v), { name: v }) } catch {} } }
+  const removeItem = async (v) => { const arr = lista.filter(x=>x!==v); setLista(arr); if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':'cad_origens'; try { await deleteDoc(doc(db, col, v)) } catch {} } }
   return (
     <div className="panel">
       <div className="tabs">
@@ -962,7 +949,7 @@ function AlertBar({ revisarCount, aprovadaCount, onShowRevisar, onShowAprovada }
 
 export default function App() {
   const [user, setUser] = useState(null)
-  const [demandas, setDemandas] = useState(ler())
+  const [demandas, setDemandas] = useState([])
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('table')
   const [compact, setCompact] = useState(false)
@@ -972,15 +959,15 @@ export default function App() {
   const [modalOpen, setModalOpen] = useState(false)
   const [modalMode, setModalMode] = useState('create')
   const [editing, setEditing] = useState(null)
-  const [themeVars, setThemeVars] = useState(readObj('themeVars', defaultTheme))
-  const [appSettings, setAppSettings] = useState(readObj('appSettings', { autoPostMLabs:false }))
+  const [themeVars, setThemeVars] = useState(defaultTheme)
+  const [appSettings, setAppSettings] = useState({ autoPostMLabs:false })
   
-  const [cadStatus, setCadStatus] = useState(readLS('cadStatus', ["Aberta","Em Progresso","Concluída"]))
-  const [cadTipos, setCadTipos] = useState(readLS('cadTipos', ["Post","Story","Banner","Vídeo","Outro"]))
-  const [cadPlataformas, setCadPlataformas] = useState(readLS('cadPlataformas', []))
-  const [cadOrigens, setCadOrigens] = useState(readLS('cadOrigens', []))
+  const [cadStatus, setCadStatus] = useState(["Aberta","Em Progresso","Concluída"]) 
+  const [cadTipos, setCadTipos] = useState(["Post","Story","Banner","Vídeo","Outro"]) 
+  const [cadPlataformas, setCadPlataformas] = useState([])
+  const [cadOrigens, setCadOrigens] = useState([])
   const [usersAll, setUsersAll] = useState([])
-  const [cadStatusColors, setCadStatusColors] = useState(readObj('cadStatusColors', { Aberta:'#f59e0b', "Em Progresso":"#3b82f6", "Concluída":"#10b981" }))
+  const [cadStatusColors, setCadStatusColors] = useState({ Aberta:'#f59e0b', "Em Progresso":"#3b82f6", "Concluída":"#10b981" })
   const designersFromDemandas = useMemo(()=> Array.from(new Set(demandas.map(x=>x.designer).filter(Boolean))).sort(), [demandas])
   const designersFromUsers = useMemo(()=> usersAll.filter(u=> (u.cargo||'')==='Designer').map(u=> u.username).filter(Boolean).sort(), [usersAll])
   const designers = useMemo(()=> Array.from(new Set([...designersFromUsers, ...designersFromDemandas])).sort(), [designersFromUsers, designersFromDemandas])
@@ -1026,20 +1013,11 @@ export default function App() {
     return allRoutes.filter(r => p[r] === true)
   },[user])
 
-  useEffect(()=>{ if (!db) gravar(demandas) },[demandas, db])
+  useEffect(()=>{ /* Firebase somente: sem persistência local */ },[demandas, db])
   useEffect(()=>{ if (!db) setLoading(false) },[db])
-  useEffect(()=>{ if (!db) writeLS('cadStatus', cadStatus) },[cadStatus, db])
-  useEffect(()=>{ if (!db) writeLS('cadTipos', cadTipos) },[cadTipos, db])
-  useEffect(()=>{ if (!db) writeLS('appSettings', appSettings) },[appSettings, db])
-  
-  useEffect(()=>{ if (!db) writeLS('cadPlataformas', cadPlataformas) },[cadPlataformas, db])
-  useEffect(()=>{ if (!db) writeLS('cadOrigens', cadOrigens) },[cadOrigens, db])
-  useEffect(()=>{ if (!db) writeLS('cadStatusColors', cadStatusColors) },[cadStatusColors, db])
   useEffect(()=>{
     if (!db) {
-      ensureAdminSeed()
-      const saved = readObj('localUser', null)
-      if (saved) setUser(saved)
+      /* Firebase requerido: não carregar usuário local */
     }
   },[db])
   useEffect(()=>{
@@ -1063,7 +1041,6 @@ export default function App() {
     Object.entries(themeVars||{}).forEach(([k,v])=>{
       try { document.documentElement.style.setProperty(`--${k}`, v) } catch {}
     })
-    writeLS('themeVars', themeVars)
   },[themeVars])
   useEffect(()=>{
     if (db && user) {
@@ -1128,12 +1105,6 @@ export default function App() {
         try { unsubCadPlataformas && unsubCadPlataformas() } catch {}
         try { unsubCadOrigens && unsubCadOrigens() } catch {}
       }
-    } else if (!db && apiEnabled) {
-      api.listDemandas().then(list => { if (Array.isArray(list)) setDemandas(list) })
-      api.listCadastros('status').then(arr=> Array.isArray(arr) && setCadStatus(arr))
-      api.listCadastros('tipos').then(arr=> Array.isArray(arr) && setCadTipos(arr))
-      api.listCadastros('plataformas').then(arr=> Array.isArray(arr) && setCadPlataformas(arr))
-      api.listCadastros('origens').then(arr=> Array.isArray(arr) && setCadOrigens(arr))
     }
   },[db, user])
   useEffect(()=>{
@@ -1145,19 +1116,12 @@ export default function App() {
     }
   },[user, allowedRoutes, route])
 
-  const logout = async ()=>{ try { await signOut(auth) } catch {} try { localStorage.removeItem('localUser') } catch {} setUser(null) }
+  const logout = async ()=>{ try { await signOut(auth) } catch {} setUser(null) }
   const login = async (username, password) => {
     const uname = String(username||'').trim()
     if (!uname || !password) throw new Error('Credenciais ausentes')
     if (!auth || !db) {
-      ensureAdminSeed()
-      const list = readUsers()
-      const found = list.find(u=> u.username===uname && u.password===password)
-      if (!found) throw new Error('Firebase não configurado ou usuário local inválido')
-      const u = { username: found.username, name: found.name||found.username, role: found.role||'comum', pages: found.pages||null, actions: found.actions||null, cargo: found.cargo||'' }
-      try { writeLS('localUser', u) } catch {}
-      setUser(u)
-      return
+      throw new Error('Firebase não configurado')
     }
     let email = uname
     if (!/@/.test(uname)) {
@@ -1197,15 +1161,10 @@ export default function App() {
   const onEdit = it => { if (!user || !canView) return; setModalMode('edit'); setEditing(it); setModalOpen(true) }
   const onDuplicate = async (it) => {
     const base = { ...it, id: undefined, status: 'Aberta', dataSolicitacao: hojeISO(), dataCriacao: hojeISO() }
-    if (apiEnabled) {
-      const saved = await api.createDemanda(base)
-      setDemandas(prev=> [...prev, { ...base, id: saved?.id ?? proxId(prev) }])
-    } else {
-      const nextId = proxId(demandas)
-      setDemandas(prev=> [...prev, { ...base, id: nextId }])
-      if (db) {
-        try { await setDoc(doc(db, 'demandas', String(nextId)), { ...base, id: nextId, createdAt: serverTimestamp() }) } catch {}
-      }
+    const nextId = proxId(demandas)
+    setDemandas(prev=> [...prev, { ...base, id: nextId }])
+    if (db) {
+      try { await setDoc(doc(db, 'demandas', String(nextId)), { ...base, id: nextId, createdAt: serverTimestamp() }) } catch {}
     }
   }
   const onStatus = async (id, status) => {
@@ -1275,26 +1234,7 @@ export default function App() {
       return { ...x, status, revisoes, dataConclusao, dataCriacao, dataFeedback: nextFeedback, historico, tempoProducaoMs, startedAt, finishedAt, previsaoIA, fxBounceAt: changed ? nowMs : (x.fxBounceAt||0), slaStartAt, slaStopAt, slaPauseMs, pauseStartedAt, slaNetMs, slaOk, leadTotalMin, leadPorFase }
     }))
     const found = demandas.find(x=> String(x.id)===String(id))
-    if (apiEnabled && found) {
-      const prevStatusEvent = (found.historico||[]).find(ev=> ev.tipo==='status')
-      const prevTs = prevStatusEvent?.data_hora_evento ? Date.parse(prevStatusEvent.data_hora_evento) : (prevStatusEvent?.data ? Date.parse(`${prevStatusEvent.data}T00:00:00Z`) : null)
-      const nowIso = new Date().toISOString()
-      const durMin = (found.status!==status && prevTs) ? Math.round((Date.now() - prevTs)/60000) : null
-      const prazoMs = (()=>{ if(!found.prazo) return null; const [y,m,d]=String(found.prazo).split('-').map(Number); const end=new Date(y,(m||1)-1,(d||1)); end.setHours(0,0,0,0); const start=new Date(); start.setHours(0,0,0,0); return end - start })()
-      const nearDeadline = !!(found.prazo && !(String(status||'').toLowerCase().includes('concluida') || status==='Concluída') && typeof prazoMs==='number' && prazoMs<=86400000)
-      const histItem = { tipo:'status', autor: userLabel, data: today, data_hora_evento: nowIso, status_anterior: found.status, status_novo: status, duracao_em_minutos: durMin, responsavel: userLabel, id_demanda: found.id, de: found.status, para: status }
-      const histAlert = nearDeadline ? { tipo:'alerta', autor: userLabel, data: today, data_hora_evento: nowIso, mensagem: 'Prazo menor que 24h', id_demanda: found.id } : null
-      const shouldAutoPost = !!(((String(status||'').toLowerCase().includes('aprov')) || (String(status||'').toLowerCase().includes('conclu'))) && appSettings.autoPostMLabs)
-      const histMlabs = shouldAutoPost ? { tipo:'mlabs', autor: userLabel, data: today, data_hora_evento: nowIso, mensagem: 'Postagem agendada via mLabs', id_demanda: found.id } : null
-      const histArr = [
-        histItem,
-        ...(histAlert ? [histAlert] : []),
-        ...(histMlabs ? [histMlabs] : []),
-        ...(found.historico||[])
-      ]
-      await api.updateDemanda(String(id), { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, dataFeedback: ((found.status!==status && String(status||'').toLowerCase().includes('feedback')) && !found.dataFeedback) ? today : found.dataFeedback, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: histArr, tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.finishedAt, slaStartAt: found.slaStartAt, slaStopAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.slaStopAt, slaPauseMs: found.slaPauseMs, pauseStartedAt: found.pauseStartedAt, slaNetMs: found.slaNetMs, slaOk: found.slaOk, leadTotalMin: found.leadTotalMin, leadPorFase: found.leadPorFase })
-      try { await addDoc(collection(db, 'historico_status'), histItem) } catch {}
-    } else if (db && found) {
+    if (db && found) {
       try {
         const prevStatusEvent = (found.historico||[]).find(ev=> ev.tipo==='status')
         const prevTs = prevStatusEvent?.data_hora_evento ? Date.parse(prevStatusEvent.data_hora_evento) : (prevStatusEvent?.data ? Date.parse(`${prevStatusEvent.data}T00:00:00Z`) : null)
@@ -1326,12 +1266,7 @@ export default function App() {
       return { ...x, comentarios, historico, fxSavedAt: Date.now() }
     }))
     const found = demandas.find(x=> String(x.id)===String(id))
-    if (apiEnabled && found) {
-      const comentarios = [c, ...(found.comentarios||[])]
-      const notif = (Array.isArray(c.mentions) && c.mentions.length>0) ? { tipo:'notificacao', autor: userLabel, data: c.data, data_hora_evento: new Date().toISOString(), mensagem: 'Você foi mencionado', mentions: c.mentions, id_demanda: found.id } : null
-      const historico = notif ? [notif, h, ...(found.historico||[])] : [h, ...(found.historico||[])]
-      await api.updateDemanda(String(id), { ...found, comentarios, historico })
-    } else if (db && found) {
+    if (db && found) {
       try {
         const notif = (Array.isArray(c.mentions) && c.mentions.length>0) ? { tipo:'notificacao', autor: userLabel, data: c.data, data_hora_evento: new Date().toISOString(), mensagem: 'Você foi mencionado', mentions: c.mentions, id_demanda: found.id } : null
         const histArr = notif ? [notif, h, ...(found.historico||[])] : [h, ...(found.historico||[])]
@@ -1348,10 +1283,7 @@ export default function App() {
       return { ...x, [campo]: valor, historico }
     }))
     const found = demandas.find(x=> String(x.id)===String(id))
-    if (apiEnabled && found) {
-      const histItem = { tipo:'grupo', autor: userLabel, data: today, campo: campo, valor: valor, id_demanda: found.id }
-      await api.updateDemanda(String(id), { ...found, [campo]: valor, historico: [histItem, ...(found.historico||[])] })
-    } else if (db && found) {
+    if (db && found) {
       try {
         const histItem = { tipo:'grupo', autor: userLabel, data: today, campo: campo, valor: valor, id_demanda: found.id }
         await updateDoc(doc(db, 'demandas', String(id)), { ...found, [campo]: valor, historico: [histItem, ...(found.historico||[])] }) }
@@ -1361,8 +1293,7 @@ export default function App() {
   const onDelete = async (id) => {
     setDemandas(prev=> prev.map(x=> x.id===id ? ({ ...x, fxDeleting:true }) : x))
     setTimeout(()=>{ setDemandas(prev=> prev.filter(x=> x.id!==id)) }, 180)
-    if (apiEnabled) await api.deleteDemanda(id)
-    else if (db) { try { await deleteDoc(doc(db, 'demandas', String(id))) } catch {} }
+    if (db) { try { await deleteDoc(doc(db, 'demandas', String(id))) } catch {} }
   }
 
   const pushAlert = async (id, mensagem) => {
@@ -1379,10 +1310,7 @@ export default function App() {
     }))
     const found = updatedItem || demandas.find(x=> x.id===id)
     if (!found) return
-    if (apiEnabled) {
-      const hist = { tipo:'alerta', autor: userLabel, data: today, data_hora_evento: new Date().toISOString(), mensagem, id_demanda: found.id }
-      await api.updateDemanda(id, { ...found, historico: [hist, ...(found.historico||[])] })
-    } else if (db) {
+    if (db) {
       try {
         const hist = { tipo:'alerta', autor: userLabel, data: today, data_hora_evento: new Date().toISOString(), mensagem, id_demanda: found.id }
         await updateDoc(doc(db, 'demandas', String(id)), { ...found, historico: [hist, ...(found.historico||[])] })
@@ -1435,8 +1363,7 @@ export default function App() {
       const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, comentarios: comentarios ?? editing.comentarios, historico: historico ?? editing.historico, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, dataFeedback: dataFeedback || editing.dataFeedback, plataforma, prazo, origem, campanha }
       const updatedView = { ...updated, fxSavedAt: Date.now() }
       setDemandas(prev=> prev.map(x=> x.id===editing.id ? updatedView : x))
-      if (apiEnabled) await api.updateDemanda(editing.id, updated)
-      else if (db) { try { await updateDoc(doc(db, 'demandas', String(editing.id)), updated) } catch {} }
+      if (db) { try { await updateDoc(doc(db, 'demandas', String(editing.id)), updated) } catch {} }
       await ensureCad()
     } else {
       const hoje = hojeISO()
@@ -1444,19 +1371,14 @@ export default function App() {
       const inicial = { tipo:'status', autor: userLabel, data: hoje, data_hora_evento: nowIso, status_anterior: '', status_novo: 'Aberta', duracao_em_minutos: null, responsavel: userLabel, id_demanda: null, de: '', para: 'Aberta' }
       const previsaoIA = calcPrevisaoIA(demandas, { designer, tipoMidia, prazo, revisoes: 0, plataforma, origem })
       const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: hoje, dataFeedback: undefined, status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null, finishedAt: null, revisoes: 0, createdBy: userLabel, previsaoIA, slaStartAt: null, slaStopAt: null, slaPauseMs: 0, pauseStartedAt: null, slaNetMs: 0, slaOk: null, leadTotalMin: 0, leadPorFase: {} }
-      if (apiEnabled) {
-        const saved = await api.createDemanda(novo)
-        setDemandas(prev=> [...prev, { ...novo, id: saved?.id ?? proxId(prev), fxNewAt: Date.now() }])
-      } else {
-        const nextId = proxId(demandas)
-        setDemandas(prev=> [...prev, { ...novo, id: nextId, fxNewAt: Date.now() }])
-        if (db) {
-          try {
-            await setDoc(doc(db, 'demandas', String(nextId)), { ...novo, id: nextId, createdAt: serverTimestamp() })
-            const histFirst = { ...inicial, id_demanda: nextId }
-            try { await addDoc(collection(db, 'historico_status'), histFirst) } catch {}
-          } catch {}
-        }
+      const nextId = proxId(demandas)
+      setDemandas(prev=> [...prev, { ...novo, id: nextId, fxNewAt: Date.now() }])
+      if (db) {
+        try {
+          await setDoc(doc(db, 'demandas', String(nextId)), { ...novo, id: nextId, createdAt: serverTimestamp() })
+          const histFirst = { ...inicial, id_demanda: nextId }
+          try { await addDoc(collection(db, 'historico_status'), histFirst) } catch {}
+        } catch {}
       }
       await ensureCad()
     }
@@ -1465,13 +1387,8 @@ export default function App() {
 
   const onResetSystem = async () => {
     if (!window.confirm('Confirmar: apagar TODAS as demandas e limpar relatórios?')) return
-    const toDelete = apiEnabled ? [...demandas] : []
     setDemandas([])
-    try { localStorage.removeItem('demandas') } catch {}
     try { setFiltros({designer:'',status:'',plataforma:'',tipoMidia:'',origem:'',campanha:'',cIni:'',cFim:'',sIni:'',sFim:''}) } catch {}
-    if (apiEnabled && toDelete.length) {
-      try { await Promise.all(toDelete.map(x=> api.deleteDemanda(x.id))) } catch {}
-    }
     if (db) {
       try {
         const snap = await getDocs(collection(db, 'demandas'))
@@ -1533,7 +1450,7 @@ export default function App() {
             <ReportsView demandas={demandas} items={itemsVisible} designers={designersVisible} filtros={filtros} setFiltros={setFiltros} loading={loading} />
           )}
           {user && route==='usuarios' && (
-            <UsersView users={readUsers()} onCreate={(nu)=>{ const list=readUsers(); writeUsers([...list, nu]) }} onDelete={(username)=>{ const list=readUsers().filter(u=>u.username!==username); writeUsers(list) }} onUpdate={(username, patch)=>{ const list=readUsers().map(u=> u.username===username ? { ...u, ...patch } : u); writeUsers(list) }} role={role} />
+            <UsersView role={role} />
           )}
           
         </div>
@@ -1568,19 +1485,15 @@ function UsersView({ users, onCreate, onDelete, onUpdate, role }) {
   const [list, setList] = useState([])
   const fns = useMemo(()=> (firebaseApp ? getFunctions(firebaseApp) : null), [])
   const [pwdEdit, setPwdEdit] = useState({})
-  useEffect(()=>{ if (db) { const unsub = onSnapshot(collection(db,'usuarios'), s=>{ const arr=[]; s.forEach(d=> arr.push({ id:d.id, ...d.data() })); setList(arr) }); return ()=>{ try{unsub()}catch{} } } else { setList(readUsers()) } },[])
-  const refresh = ()=> setList(readUsers())
+  useEffect(()=>{ if (db) { const unsub = onSnapshot(collection(db,'usuarios'), s=>{ const arr=[]; s.forEach(d=> arr.push({ id:d.id, ...d.data() })); setList(arr) }); return ()=>{ try{unsub()}catch{} } } else { setList([]) } },[])
   const [pages, setPages] = useState({ dashboard:true, demandas:true, config:true, cadastros:true, relatorios:true, usuarios:true })
   const [actions, setActions] = useState({ criar:true, excluir:true, visualizar:true })
   const toggle = (objSetter, key) => objSetter(prev=> ({ ...prev, [key]: !prev[key] }))
-  const create = async ()=>{ const u=username.trim(); const em=(email.trim()||`${u}@betaki.bet.br`); if(!u||!password) return; const nu={ username:u, name: name||u, role: urole, cargo, pages, actions, email: em }; if (db) { try { try { await createUserWithEmailAndPassword(auth, em, password) } catch(e) { if (e?.code!=='auth/email-already-in-use') throw e } await setDoc(doc(db,'usuarios', u), nu) } catch {} } else { onCreate({ ...nu, password }); refresh() } setUsername(''); setName(''); setPassword(''); setEmail(''); setUrole('comum'); setCargo('Designer'); setPages({ dashboard:true, demandas:true, config:true, cadastros:true, relatorios:true, usuarios:true }); setActions({ criar:true, excluir:true, visualizar:true }) }
+  const create = async ()=>{ const u=username.trim(); const em=(email.trim()||`${u}@betaki.bet.br`); if(!u||!password) return; const nu={ username:u, name: name||u, role: urole, cargo, pages, actions, email: em }; if (db) { try { try { await createUserWithEmailAndPassword(auth, em, password) } catch(e) { if (e?.code!=='auth/email-already-in-use') throw e } await setDoc(doc(db,'usuarios', u), nu) } catch {} } setUsername(''); setName(''); setPassword(''); setEmail(''); setUrole('comum'); setCargo('Designer'); setPages({ dashboard:true, demandas:true, config:true, cadastros:true, relatorios:true, usuarios:true }); setActions({ criar:true, excluir:true, visualizar:true }) }
   const del = async (u)=>{
     if ((u.username||u.id)==='admin') return
     if (db) {
       try { await deleteDoc(doc(db,'usuarios', u.username||u.id)); setList(prev=> prev.filter(x=> (x.username||x.id)!==(u.username||u.id))) } catch {}
-    } else {
-      onDelete(u.username)
-      refresh()
     }
   }
   const updatePwd = async (u)=>{
@@ -1588,19 +1501,11 @@ function UsersView({ users, onCreate, onDelete, onUpdate, role }) {
     if (!newPwd) return
     if (fns) {
       try { const call = httpsCallable(fns, 'updateUserPassword'); await call({ username: u.username||u.id, password: newPwd, email: u.email||undefined }); setPwdEdit(prev=> ({ ...prev, [u.username||u.id]: '' })) } catch {}
-    } else {
-      // modo local: atualizar senha em localStorage
-      try {
-        const list = readUsers().map(x=> x.username===(u.username||u.id) ? { ...x, password: newPwd } : x)
-        writeUsers(list)
-        setPwdEdit(prev=> ({ ...prev, [u.username||u.id]: '' }))
-        refresh()
-      } catch {}
     }
   }
-  const togglePage = async (u, key)=>{ const cur=u.pages||{}; const patch = { pages: { ...cur, [key]: !Boolean(cur[key]) } }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } else { onUpdate(u.username, patch); refresh() } }
-  const toggleAction = async (u, key)=>{ const cur=u.actions||{}; const patch = { actions: { ...cur, [key]: !Boolean(cur[key]) } }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } else { onUpdate(u.username, patch); refresh() } }
-  const updateCargo = async (u, value)=>{ const patch = { cargo: value }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } else { onUpdate(u.username, patch); refresh() } }
+  const togglePage = async (u, key)=>{ const cur=u.pages||{}; const patch = { pages: { ...cur, [key]: !Boolean(cur[key]) } }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } }
+  const toggleAction = async (u, key)=>{ const cur=u.actions||{}; const patch = { actions: { ...cur, [key]: !Boolean(cur[key]) } }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } }
+  const updateCargo = async (u, value)=>{ const patch = { cargo: value }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } }
   return (
     <div className="panel users-panel">
       <div className="tabs"><button className="tab active">Usuários</button></div>
