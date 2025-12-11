@@ -71,7 +71,10 @@ const hojeISO = () => {
 }
 const ler = () => { try { return JSON.parse(localStorage.getItem('demandas')||'[]') } catch { return [] } }
 const gravar = arr => localStorage.setItem('demandas', JSON.stringify(arr))
-const proxId = arr => arr.length ? Math.max(...arr.map(x=>x.id))+1 : 1
+const proxId = arr => {
+  const nums = arr.map(x=> (typeof x.id==='number' ? x.id : Number(x.id)||0))
+  return nums.length ? Math.max(...nums) + 1 : 1
+}
 
 function Counter({ value }) {
   const [v, setV] = useState(0)
