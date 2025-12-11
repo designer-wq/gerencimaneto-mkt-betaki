@@ -498,6 +498,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
   const [plataforma, setPlataforma] = useState(initial?.plataforma || '')
   const [arquivos, setArquivos] = useState(initial?.arquivos || [])
   const [dataCriacao, setDataCriacao] = useState(initial?.dataCriacao || '')
+  const [dataFeedback, setDataFeedback] = useState(initial?.dataFeedback || '')
   const [descricao, setDescricao] = useState(initial?.descricao || '')
   const [prazo, setPrazo] = useState(initial?.prazo || '')
   const [comentarios, setComentarios] = useState(initial?.comentarios || [])
@@ -515,6 +516,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
     setPlataforma(initial?.plataforma || (cadPlataformas?.[0] || ''))
     setArquivos(initial?.arquivos || [])
     setDataCriacao(initial?.dataCriacao || '')
+    setDataFeedback(initial?.dataFeedback || '')
     setDescricao(initial?.descricao || '')
     setPrazo(initial?.prazo || '')
     setComentarios(initial?.comentarios || [])
@@ -523,7 +525,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
     setOrigem(initial?.origem || '')
     setCampanha(initial?.campanha || '')
   },[initial, open, designers, cadTipos, cadPlataformas])
-  const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) }
+  const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, dataFeedback, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) }
   const addComentario = () => { const v = novoComentario.trim(); if (!v) return; const c = { texto: v, data: hojeISO() }; setComentarios(prev=> [c, ...prev]); setHistorico(prev=> [{ tipo:'comentario', autor:userLabel, data: c.data, texto: v }, ...prev]); setNovoComentario('') }
   const fmtDT = (s)=>{ if(!s) return ''; try{ return new Date(s).toLocaleString('pt-BR',{ day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) }catch{return s} }
   const [nowTs, setNowTs] = useState(Date.now())
@@ -587,9 +589,15 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
                 <div className="row-2">
                   <div className="form-row"><label>Arquivo</label>
                     <input type="file" multiple accept="image/*" onChange={e=>{
-                      const files = Array.from(e.target.files||[]).slice(0,5)
+                      const max = 1024*1024
+                      const files = Array.from(e.target.files||[]).filter(f=> (f.size||0) <= max).slice(0,5)
                       const readers = files.map(f => new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve({ name: f.name, url: r.result }); r.readAsDataURL(f) }))
-                      Promise.all(readers).then(arr => { setArquivos(arr); setHistorico(prev=> [{ tipo:'arquivo', autor:userLabel, data: hojeISO(), arquivos: arr }, ...prev]) })
+                      Promise.all(readers).then(arr => {
+                        setArquivos(arr)
+                        setHistorico(prev=> [{ tipo:'arquivo', autor:userLabel, data: hojeISO(), arquivos: arr }, ...prev])
+                        const nomes = arr.map(a=>a.name).join(', ')
+                        setComentarios(prev=> [{ texto: `Arquivos anexados: ${nomes||arr.length}`, data: hojeISO() }, ...prev])
+                      })
                     }} />
                   </div>
                   <div className="form-row"><label>Prazo</label><input type="date" value={prazo} onChange={e=>setPrazo(e.target.value)} /></div>
@@ -597,9 +605,15 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
               ) : (
                 <div className="form-row"><label>Arquivo</label>
                   <input type="file" multiple accept="image/*" onChange={e=>{
-                    const files = Array.from(e.target.files||[]).slice(0,5)
+                    const max = 1024*1024
+                    const files = Array.from(e.target.files||[]).filter(f=> (f.size||0) <= max).slice(0,5)
                     const readers = files.map(f => new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve({ name: f.name, url: r.result }); r.readAsDataURL(f) }))
-                    Promise.all(readers).then(arr => { setArquivos(arr); setHistorico(prev=> [{ tipo:'arquivo', autor:userLabel, data: hojeISO(), arquivos: arr }, ...prev]) })
+                    Promise.all(readers).then(arr => {
+                      setArquivos(arr)
+                      setHistorico(prev=> [{ tipo:'arquivo', autor:userLabel, data: hojeISO(), arquivos: arr }, ...prev])
+                      const nomes = arr.map(a=>a.name).join(', ')
+                      setComentarios(prev=> [{ texto: `Arquivos anexados: ${nomes||arr.length}`, data: hojeISO() }, ...prev])
+                    })
                   }} />
                 </div>
               )}
@@ -617,6 +631,9 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
                   <div className="form-row"><label>Data de Solicitação</label><input type="date" value={dataSolic} disabled /></div>
                   <div className="form-row"><label>Data de Criação</label><input type="date" value={dataCriacao} disabled /></div>
                   <div className="form-row"><label>Prazo</label><input type="date" value={prazo} onChange={e=>setPrazo(e.target.value)} /></div>
+                  {String(initial?.status||'').toLowerCase().includes('feedback') && (
+                    <div className="form-row"><label>Data de Feedback</label><input type="date" value={dataFeedback} onChange={e=> setDataFeedback(e.target.value)} /></div>
+                  )}
                 </div>
                 <div className="form-row"><label>Descrição</label><textarea rows={12} className="desc-input" value={descricao} onChange={e=> setDescricao(e.target.value)} /></div>
               </div>
@@ -777,6 +794,18 @@ export default function App() {
   const aprovadaCount = useMemo(()=> itemsVisible.filter(x=> /aprovada/i.test(String(x.status||''))).length, [itemsVisible])
   const onShowRevisar = ()=>{ setRoute('demandas'); setFiltros(prev=> ({ ...prev, status: 'Revisar' })) }
   const onShowAprovada = ()=>{ setRoute('demandas'); setFiltros(prev=> ({ ...prev, status: 'Aprovada' })) }
+  const statusCounts = useMemo(()=>{
+    const arr = itemsVisible
+    const low = s=> String(s||'').toLowerCase()
+    return {
+      'Pendente': arr.filter(x=> isPendingStatus(x.status)).length,
+      'Em produção': arr.filter(x=> isProdStatus(x.status)).length,
+      'Aguardando Feedback': arr.filter(x=> low(x.status).includes('feedback')).length,
+      'Aprovada': arr.filter(x=> low(x.status).includes('aprov')).length,
+      'Revisar': arr.filter(x=> low(x.status).includes('revisar')).length,
+      'Concluida': arr.filter(x=> low(x.status).includes('conclu')).length,
+    }
+  },[itemsVisible])
  
   const [tableLimit, setTableLimit] = useState(10)
   const [calRef, setCalRef] = useState(new Date())
@@ -967,6 +996,7 @@ export default function App() {
       let tempoProducaoMs = Number(x.tempoProducaoMs||0)
       let startedAt = x.startedAt || null
       let finishedAt = x.finishedAt || null
+      const isFeedback = String(status||'').toLowerCase().includes('feedback')
       if (changed) {
         if (wasProd && !isProd && startedAt) {
           const startedMs = Date.parse(startedAt)
@@ -985,13 +1015,14 @@ export default function App() {
       if (changed && isDone) finishedAt = new Date(nowMs).toISOString()
       const histItem = changed ? { tipo:'status', autor: userLabel, data: today, de: x.status, para: status } : null
       const historico = histItem ? [histItem, ...(x.historico||[])] : (x.historico||[])
-      return { ...x, status, revisoes, dataConclusao, dataCriacao, historico, tempoProducaoMs, startedAt, finishedAt }
+      const nextFeedback = (changed && isFeedback && !x.dataFeedback) ? today : x.dataFeedback
+      return { ...x, status, revisoes, dataConclusao, dataCriacao, dataFeedback: nextFeedback, historico, tempoProducaoMs, startedAt, finishedAt }
     }))
     const found = demandas.find(x=>x.id===id)
     if (apiEnabled && found) {
-      await api.updateDemanda(id, { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: [{ tipo:'status', autor: userLabel, data: today, de: found.status, para: status }, ...(found.historico||[]) ], tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.finishedAt })
+      await api.updateDemanda(id, { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, dataFeedback: ((found.status!==status && String(status||'').toLowerCase().includes('feedback')) && !found.dataFeedback) ? today : found.dataFeedback, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: [{ tipo:'status', autor: userLabel, data: today, de: found.status, para: status }, ...(found.historico||[]) ], tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.finishedAt })
     } else if (db && found) {
-      try { await updateDoc(doc(db, 'demandas', String(id)), { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: [{ tipo:'status', autor: userLabel, data: today, de: found.status, para: status }, ...(found.historico||[]) ], tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.finishedAt }) } catch {}
+      try { await updateDoc(doc(db, 'demandas', String(id)), { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, dataFeedback: ((found.status!==status && String(status||'').toLowerCase().includes('feedback')) && !found.dataFeedback) ? today : found.dataFeedback, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: [{ tipo:'status', autor: userLabel, data: today, de: found.status, para: status }, ...(found.historico||[]) ], tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.finishedAt }) } catch {}
     }
   }
   const onDelete = async (id) => {
@@ -999,7 +1030,7 @@ export default function App() {
     if (apiEnabled) await api.deleteDemanda(id)
     else if (db) { try { await deleteDoc(doc(db, 'demandas', String(id))) } catch {} }
   }
-  const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) => {
+  const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, dataFeedback, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) => {
     const ensureCad = async () => {
       if (!db) return
       try { if (tipoMidia) await setDoc(doc(db, 'cad_tipos', String(tipoMidia)), { name: tipoMidia }, { merge: true }) } catch {}
@@ -1007,7 +1038,7 @@ export default function App() {
       try { if (historico && Array.isArray(historico)) { const last = historico[0]; const st = last?.para || last?.de || 'Aberta'; if (st) await setDoc(doc(db, 'cad_status', String(st)), { name: st }, { merge: true }) } } catch {}
     }
     if (modalMode==='edit' && editing) {
-      const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, comentarios: comentarios ?? editing.comentarios, historico: historico ?? editing.historico, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, plataforma, prazo, origem, campanha }
+      const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, comentarios: comentarios ?? editing.comentarios, historico: historico ?? editing.historico, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, dataFeedback: dataFeedback || editing.dataFeedback, plataforma, prazo, origem, campanha }
       setDemandas(prev=> prev.map(x=> x.id===editing.id ? updated : x))
       if (apiEnabled) await api.updateDemanda(editing.id, updated)
       else if (db) { try { await updateDoc(doc(db, 'demandas', String(editing.id)), updated) } catch {} }
@@ -1015,7 +1046,7 @@ export default function App() {
     } else {
       const hoje = hojeISO()
       const inicial = { tipo:'status', autor: userLabel, data: hoje, de: '', para: 'Aberta' }
-      const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: hoje, status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null, finishedAt: null, revisoes: 0, createdBy: userLabel }
+      const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: hoje, dataFeedback: undefined, status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null, finishedAt: null, revisoes: 0, createdBy: userLabel }
       if (apiEnabled) {
         const saved = await api.createDemanda(novo)
         setDemandas(prev=> [...prev, { ...novo, id: saved?.id ?? proxId(prev) }])
@@ -1058,7 +1089,7 @@ export default function App() {
       <div className={`content ${user?'':'no-sidebar'}`}>
         <div className="app">
           {user ? <Header onNew={onNew} view={view} setView={setView} showNew={!!user} user={user} onLogout={logout} setRoute={setRoute} /> : null}
-          {user ? <AlertBar revisarCount={revisarCount} aprovadaCount={aprovadaCount} onShowRevisar={onShowRevisar} onShowAprovada={onShowAprovada} /> : null}
+          
           {!user && (
             <LoginView onLogin={login} />
           )}
@@ -1068,7 +1099,7 @@ export default function App() {
           {user && route==='demandas' && (
             <div className="demandas-layout">
               <div className="sidebar-col">
-                <FilterBar filtros={filtros} setFiltros={setFiltros} designers={designersVisible} showSearch={false} />
+                <FilterBar filtros={filtros} setFiltros={setFiltros} designers={designersVisible} showSearch={false} statusCounts={statusCounts} />
               </div>
               <div className="content-col">
                 <div className="top-search">
@@ -1338,7 +1369,7 @@ function ConfigView({ themeVars, setThemeVars, onReset }) {
     </div>
   )
 }
-function FilterBar({ filtros, setFiltros, designers, showSearch }) {
+function FilterBar({ filtros, setFiltros, designers, showSearch, statusCounts }) {
   const [period, setPeriod] = useState('today')
   useEffect(()=>{
     const d = new Date()
@@ -1359,6 +1390,12 @@ function FilterBar({ filtros, setFiltros, designers, showSearch }) {
   const list = ['Hoje','Semana','Mês','Mês passado','Últimos 30 dias']
   const keyOf = s => s==='Hoje'?'today': s==='Semana'?'week': s==='Mês'?'month': s==='Mês passado'?'lastmonth':'last30'
   const designersKeys = ['Todos', ...designers]
+  const colorOf = (s) => {
+    if (s==='Revisar') return 'red'
+    if (s==='Aguardando Feedback') return 'purple'
+    if (s==='Aprovada' || s==='Concluida') return 'green'
+    return ''
+  }
   return (
     <div className="filterbar">
       {showSearch!==false && (
@@ -1386,8 +1423,8 @@ function FilterBar({ filtros, setFiltros, designers, showSearch }) {
         <div className="seg">
           <div className="filter-title">Status</div>
             {FIXED_STATUS.map(s=> (
-              <button key={s} className={`btn-md ${((filtros.status||'')===s)?'active':''}`} onClick={()=> setFiltros(prev=> ({ ...prev, status: prev.status===s ? undefined : s }))}>
-                <span className="icon"><Icon name="dot" /></span><span>{s}</span>
+              <button key={s} className={`btn-md ${colorOf(s)} ${((filtros.status||'')===s)?'active':''}`} onClick={()=> setFiltros(prev=> ({ ...prev, status: prev.status===s ? undefined : s }))}>
+                <span className="icon"><Icon name="dot" /></span><span>{s}</span>{(statusCounts?.[s]>0) ? (<span className="alert-count">{statusCounts[s]}</span>) : null}
               </button>
             ))}
         </div>
@@ -1789,5 +1826,3 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros }) {
     </div>
   )
 }
-  const onShowRevisar = ()=>{ setRoute('demandas'); setFiltros(prev=> ({ ...prev, status: 'Revisar' })) }
-  const onShowAprovada = ()=>{ setRoute('demandas'); setFiltros(prev=> ({ ...prev, status: 'Aprovada' })) }
