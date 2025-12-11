@@ -488,7 +488,7 @@ function CalendarView({ items, refDate }) {
   )
 }
 
-function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners, cadPlataformas, onDelete, userLabel, canDelete }) {
+function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, cadPlataformas, onDelete, userLabel, canDelete }) {
   const [designer, setDesigner] = useState(initial?.designer || '')
   const [tipoMidia, setTipoMidia] = useState(initial?.tipoMidia || 'Post')
   const [titulo, setTitulo] = useState(initial?.titulo || '')
@@ -522,7 +522,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
     setHistorico(initial?.historico || [])
     setOrigem(initial?.origem || '')
     setCampanha(initial?.campanha || '')
-  },[initial, open, cadDesigners, cadTipos, cadPlataformas])
+  },[initial, open, designers, cadTipos, cadPlataformas])
   const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) }
   const addComentario = () => { const v = novoComentario.trim(); if (!v) return; const c = { texto: v, data: hojeISO() }; setComentarios(prev=> [c, ...prev]); setHistorico(prev=> [{ tipo:'comentario', autor:userLabel, data: c.data, texto: v }, ...prev]); setNovoComentario('') }
   const fmtDT = (s)=>{ if(!s) return ''; try{ return new Date(s).toLocaleString('pt-BR',{ day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) }catch{return s} }
@@ -558,7 +558,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
               <div className="form-row"><label>Designer</label>
                 <select value={designer} onChange={e=>setDesigner(e.target.value)} required>
                   <option value="">Designer</option>
-                  {(cadDesigners||[]).map(d=> <option key={d} value={d}>{d}</option>)}
+                  {(designers||[]).map(d=> <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
               <div className="form-row"><label>Tipo</label><select value={tipoMidia} onChange={e=>setTipoMidia(e.target.value)}>
@@ -672,28 +672,26 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners,
   )
 }
 
-function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadDesigners, setCadDesigners, cadPlataformas, setCadPlataformas, cadStatusColors, setCadStatusColors }) {
-  const [tab, setTab] = useState('designer')
+function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadPlataformas, setCadPlataformas, cadStatusColors, setCadStatusColors }) {
+  const [tab, setTab] = useState('tipo')
   const [novo, setNovo] = useState('')
   const [novoCor, setNovoCor] = useState('#f59e0b')
-  const lista = tab==='designer' ? cadDesigners : tab==='status' ? cadStatus : tab==='tipo' ? cadTipos : cadPlataformas
+  const lista = tab==='status' ? cadStatus : tab==='tipo' ? cadTipos : cadPlataformas
   const setLista = (arr) => {
-    if (tab==='designer') setCadDesigners(arr)
-    else if (tab==='status') setCadStatus(arr)
+    if (tab==='status') setCadStatus(arr)
     else if (tab==='tipo') setCadTipos(arr)
     else setCadPlataformas(arr)
   }
-  const addItem = async () => { const v = novo.trim(); if (!v) return; if (lista.includes(v)) return; const arr = [...lista, v]; setLista(arr); setNovo(''); if (tab==='status') setCadStatusColors(prev=> ({ ...prev, [v]: novoCor })); if (apiEnabled) await api.addCadastro(tab==='designer'?'designers':tab==='status'?'status':tab==='tipo'?'tipos':'plataformas', v); else if (db) { const col = tab==='designer'?'cad_designers':tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':'cad_plataformas'; try { await setDoc(doc(db, col, v), { name: v }) } catch {} } }
-  const removeItem = async (v) => { const arr = lista.filter(x=>x!==v); setLista(arr); if (apiEnabled) await api.removeCadastro(tab==='designer'?'designers':tab==='status'?'status':tab==='tipo'?'tipos':'plataformas', v); else if (db) { const col = tab==='designer'?'cad_designers':tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':'cad_plataformas'; try { await deleteDoc(doc(db, col, v)) } catch {} } }
+  const addItem = async () => { const v = novo.trim(); if (!v) return; if (lista.includes(v)) return; const arr = [...lista, v]; setLista(arr); setNovo(''); if (tab==='status') setCadStatusColors(prev=> ({ ...prev, [v]: novoCor })); if (apiEnabled) await api.addCadastro(tab==='status'?'status':tab==='tipo'?'tipos':'plataformas', v); else if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':'cad_plataformas'; try { await setDoc(doc(db, col, v), { name: v }) } catch {} } }
+  const removeItem = async (v) => { const arr = lista.filter(x=>x!==v); setLista(arr); if (apiEnabled) await api.removeCadastro(tab==='status'?'status':tab==='tipo'?'tipos':'plataformas', v); else if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':'cad_plataformas'; try { await deleteDoc(doc(db, col, v)) } catch {} } }
   return (
     <div className="panel">
       <div className="tabs">
-        <button className={`tab ${tab==='designer'?'active':''}`} onClick={()=>setTab('designer')}>Designer</button>
         <button className={`tab ${tab==='tipo'?'active':''}`} onClick={()=>setTab('tipo')}>Tipo</button>
         <button className={`tab ${tab==='plataforma'?'active':''}`} onClick={()=>setTab('plataforma')}>Plataforma</button>
       </div>
       <div className="form-row" style={{marginTop:10}}>
-        <label>{tab==='designer'?'Novo Designer':tab==='status'?'Novo Status':tab==='tipo'?'Novo Tipo':'Nova Plataforma'}</label>
+        <label>{tab==='status'?'Novo Status':tab==='tipo'?'Novo Tipo':'Nova Plataforma'}</label>
         <div style={{display:'flex', gap:8}}>
           <input value={novo} onChange={e=>setNovo(e.target.value)} />
           {tab==='status' && <input type="color" value={novoCor} onChange={e=>setNovoCor(e.target.value)} title="Cor" />}
@@ -735,11 +733,12 @@ export default function App() {
   
   const [cadStatus, setCadStatus] = useState(readLS('cadStatus', ["Aberta","Em Progresso","Concluída"]))
   const [cadTipos, setCadTipos] = useState(readLS('cadTipos', ["Post","Story","Banner","Vídeo","Outro"]))
-  const [cadDesigners, setCadDesigners] = useState(readLS('cadDesigners', []))
   const [cadPlataformas, setCadPlataformas] = useState(readLS('cadPlataformas', []))
+  const [usersAll, setUsersAll] = useState([])
   const [cadStatusColors, setCadStatusColors] = useState(readObj('cadStatusColors', { Aberta:'#f59e0b', "Em Progresso":"#3b82f6", "Concluída":"#10b981" }))
   const designersFromDemandas = useMemo(()=> Array.from(new Set(demandas.map(x=>x.designer).filter(Boolean))).sort(), [demandas])
-  const designers = useMemo(()=> Array.from(new Set([...cadDesigners, ...designersFromDemandas])).sort(), [cadDesigners, designersFromDemandas])
+  const designersFromUsers = useMemo(()=> usersAll.filter(u=> (u.cargo||'')==='Designer').map(u=> u.username).filter(Boolean).sort(), [usersAll])
+  const designers = useMemo(()=> Array.from(new Set([...designersFromUsers, ...designersFromDemandas])).sort(), [designersFromUsers, designersFromDemandas])
   const campanhas = useMemo(()=> Array.from(new Set(demandas.map(x=>x.campanha).filter(Boolean))).sort(), [demandas])
   const role = user?.role||'comum'
   const items = useMemo(()=> aplicarFiltros(demandas, filtros), [demandas, filtros])
@@ -767,7 +766,7 @@ export default function App() {
   useEffect(()=>{ if (!db) gravar(demandas) },[demandas, db])
   useEffect(()=>{ if (!db) writeLS('cadStatus', cadStatus) },[cadStatus, db])
   useEffect(()=>{ if (!db) writeLS('cadTipos', cadTipos) },[cadTipos, db])
-  useEffect(()=>{ if (!db) writeLS('cadDesigners', cadDesigners) },[cadDesigners, db])
+  
   useEffect(()=>{ if (!db) writeLS('cadPlataformas', cadPlataformas) },[cadPlataformas, db])
   useEffect(()=>{ if (!db) writeLS('cadStatusColors', cadStatusColors) },[cadStatusColors, db])
   useEffect(()=>{
@@ -805,8 +804,8 @@ export default function App() {
       let unsubDemandas = null
       let unsubCadStatus = null
       let unsubCadTipos = null
-      let unsubCadDesigners = null
       let unsubCadPlataformas = null
+      let unsubUsuarios = null
       try {
         unsubDemandas = onSnapshot(collection(db, 'demandas'), snap => {
           const arr = []
@@ -829,10 +828,10 @@ export default function App() {
         })
       } catch {}
       try {
-        unsubCadDesigners = onSnapshot(collection(db, 'cad_designers'), snap => {
+        unsubUsuarios = onSnapshot(collection(db, 'usuarios'), snap => {
           const arr = []
-          snap.forEach(d => arr.push(d.data()?.name || d.id))
-          setCadDesigners(arr)
+          snap.forEach(d => arr.push({ id: d.id, ...d.data() }))
+          setUsersAll(arr)
         })
       } catch {}
       try {
@@ -846,14 +845,13 @@ export default function App() {
         try { unsubDemandas && unsubDemandas() } catch {}
         try { unsubCadStatus && unsubCadStatus() } catch {}
         try { unsubCadTipos && unsubCadTipos() } catch {}
-        try { unsubCadDesigners && unsubCadDesigners() } catch {}
+        try { unsubUsuarios && unsubUsuarios() } catch {}
         try { unsubCadPlataformas && unsubCadPlataformas() } catch {}
       }
     } else if (!db && apiEnabled) {
       api.listDemandas().then(list => { if (Array.isArray(list)) setDemandas(list) })
       api.listCadastros('status').then(arr=> Array.isArray(arr) && setCadStatus(arr))
       api.listCadastros('tipos').then(arr=> Array.isArray(arr) && setCadTipos(arr))
-      api.listCadastros('designers').then(arr=> Array.isArray(arr) && setCadDesigners(arr))
       api.listCadastros('plataformas').then(arr=> Array.isArray(arr) && setCadPlataformas(arr))
     }
   },[db, user])
@@ -975,7 +973,6 @@ export default function App() {
   const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) => {
     const ensureCad = async () => {
       if (!db) return
-      try { if (designer) await setDoc(doc(db, 'cad_designers', String(designer)), { name: designer }, { merge: true }) } catch {}
       try { if (tipoMidia) await setDoc(doc(db, 'cad_tipos', String(tipoMidia)), { name: tipoMidia }, { merge: true }) } catch {}
       try { if (plataforma) await setDoc(doc(db, 'cad_plataformas', String(plataforma)), { name: plataforma }, { merge: true }) } catch {}
       try { if (historico && Array.isArray(historico)) { const last = historico[0]; const st = last?.para || last?.de || 'Aberta'; if (st) await setDoc(doc(db, 'cad_status', String(st)), { name: st }, { merge: true }) } } catch {}
@@ -1051,7 +1048,7 @@ export default function App() {
                 <div className="table-scroll">
                   <TableView items={itemsVisible.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsVisible.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsVisible.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsVisible.length)} total={itemsVisible.length} compact={compact} canEdit={!!user} />
                 </div>
-                <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} cadDesigners={cadDesigners} cadPlataformas={cadPlataformas} onDelete={onDelete} userLabel={userLabel} canDelete={canDelete} />
+                <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} designers={designersVisible} cadPlataformas={cadPlataformas} onDelete={onDelete} userLabel={userLabel} canDelete={canDelete} />
                 <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designersVisible} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} cadPlataformas={cadPlataformas} cadTipos={cadTipos} origens={ORIGENS} campanhas={campanhas} />
               </div>
             </div>
@@ -1060,7 +1057,7 @@ export default function App() {
             <ConfigView themeVars={themeVars} setThemeVars={setThemeVars} onReset={onResetSystem} />
           )}
           {user && route==='cadastros' && (
-            <CadastrosView cadStatus={cadStatus} setCadStatus={setCadStatus} cadTipos={cadTipos} setCadTipos={setCadTipos} cadDesigners={cadDesigners} setCadDesigners={setCadDesigners} cadPlataformas={cadPlataformas} setCadPlataformas={setCadPlataformas} cadStatusColors={cadStatusColors} setCadStatusColors={setCadStatusColors} />
+            <CadastrosView cadStatus={cadStatus} setCadStatus={setCadStatus} cadTipos={cadTipos} setCadTipos={setCadTipos} cadPlataformas={cadPlataformas} setCadPlataformas={setCadPlataformas} cadStatusColors={cadStatusColors} setCadStatusColors={setCadStatusColors} />
           )}
           {user && route==='relatorios' && (
             <ReportsView demandas={demandas} items={itemsVisible} designers={designersVisible} filtros={filtros} setFiltros={setFiltros} />
