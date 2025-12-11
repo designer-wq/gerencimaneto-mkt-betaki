@@ -1411,10 +1411,10 @@ export default function App() {
           {!user && (
             <LoginView onLogin={login} />
           )}
-          {user && route==='dashboard' && (
+          {user && route==='dashboard' && allowedRoutes.includes('dashboard') && (
             <DashboardView demandas={demandas} items={dashItems} designers={dashDesigners} setView={setView} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} compact={compact} calRef={calRef} setCalRef={setCalRef} loading={loading} />
           )}
-          {user && route==='demandas' && (
+          {user && route==='demandas' && allowedRoutes.includes('demandas') && (
             <div className="demandas-layout">
               <div className="sidebar-col">
                 <FilterBar filtros={filtros} setFiltros={setFiltros} designers={designersVisible} showSearch={false} statusCounts={statusCounts} />
@@ -1440,16 +1440,16 @@ export default function App() {
           </div>
             </div>
           )}
-          {user && route==='config' && (
+          {user && route==='config' && allowedRoutes.includes('config') && (
             <ConfigView themeVars={themeVars} setThemeVars={setThemeVars} onReset={onResetSystem} appSettings={appSettings} setAppSettings={setAppSettings} />
           )}
-          {user && route==='cadastros' && (
+          {user && route==='cadastros' && allowedRoutes.includes('cadastros') && (
             <CadastrosView cadStatus={cadStatus} setCadStatus={setCadStatus} cadTipos={cadTipos} setCadTipos={setCadTipos} cadOrigens={cadOrigens} setCadOrigens={setCadOrigens} cadStatusColors={cadStatusColors} setCadStatusColors={setCadStatusColors} />
           )}
-          {user && route==='relatorios' && (
+          {user && route==='relatorios' && allowedRoutes.includes('relatorios') && (
             <ReportsView demandas={demandas} items={itemsVisible} designers={designersVisible} filtros={filtros} setFiltros={setFiltros} loading={loading} />
           )}
-          {user && route==='usuarios' && (
+          {user && route==='usuarios' && allowedRoutes.includes('usuarios') && (
             <UsersView role={role} />
           )}
           
