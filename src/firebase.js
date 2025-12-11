@@ -23,7 +23,10 @@ const hasEnv = !!(envCfg.apiKey && envCfg.authDomain && envCfg.projectId && envC
 const firebaseConfig = runtimeCfg || (hasEnv ? envCfg : defaultCfg)
 
 const enabled = !!(firebaseConfig && firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.projectId && firebaseConfig.appId)
-const app = enabled ? initializeApp(firebaseConfig) : null
+let app = null
+if (enabled) {
+  try { app = initializeApp(firebaseConfig) } catch (e) { try { app = initializeApp(defaultCfg) } catch {} }
+}
 export const db = app ? getFirestore(app) : null
 export const auth = app ? getAuth(app) : null
 if (auth) {
