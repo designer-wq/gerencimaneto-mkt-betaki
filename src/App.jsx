@@ -488,7 +488,7 @@ function CalendarView({ items, refDate }) {
   )
 }
 
-function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners, cadPlataformas, onDelete, userLabel }) {
+function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, cadDesigners, cadPlataformas, onDelete, userLabel, canDelete }) {
   const [designer, setDesigner] = useState(initial?.designer || '')
   const [tipoMidia, setTipoMidia] = useState(initial?.tipoMidia || 'Post')
   const [titulo, setTitulo] = useState(initial?.titulo || '')
@@ -801,13 +801,7 @@ export default function App() {
     writeLS('themeVars', themeVars)
   },[themeVars])
   useEffect(()=>{
-    if (apiEnabled) {
-      api.listDemandas().then(list => { if (Array.isArray(list)) setDemandas(list) })
-      api.listCadastros('status').then(arr=> Array.isArray(arr) && setCadStatus(arr))
-      api.listCadastros('tipos').then(arr=> Array.isArray(arr) && setCadTipos(arr))
-      api.listCadastros('designers').then(arr=> Array.isArray(arr) && setCadDesigners(arr))
-      api.listCadastros('plataformas').then(arr=> Array.isArray(arr) && setCadPlataformas(arr))
-    } else if (db) {
+    if (db && user) {
       let unsubDemandas = null
       let unsubCadStatus = null
       let unsubCadTipos = null
@@ -855,8 +849,14 @@ export default function App() {
         try { unsubCadDesigners && unsubCadDesigners() } catch {}
         try { unsubCadPlataformas && unsubCadPlataformas() } catch {}
       }
+    } else if (!db && apiEnabled) {
+      api.listDemandas().then(list => { if (Array.isArray(list)) setDemandas(list) })
+      api.listCadastros('status').then(arr=> Array.isArray(arr) && setCadStatus(arr))
+      api.listCadastros('tipos').then(arr=> Array.isArray(arr) && setCadTipos(arr))
+      api.listCadastros('designers').then(arr=> Array.isArray(arr) && setCadDesigners(arr))
+      api.listCadastros('plataformas').then(arr=> Array.isArray(arr) && setCadPlataformas(arr))
     }
-  },[])
+  },[db, user])
   useEffect(()=>{
     if (user && !allowedRoutes.includes(route)) {
       setRoute(allowedRoutes[0])
