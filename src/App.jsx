@@ -773,6 +773,10 @@ export default function App() {
   }), [items])
   const designersVisible = useMemo(()=> (role==='admin'||role==='gerente') ? designers : [user?.username].filter(Boolean), [designers, role, user])
   const itemsVisible = useMemo(()=> (role==='admin'||role==='gerente') ? itemsSorted : itemsSorted.filter(x=> (x.designer||'')===(user?.username||'')), [itemsSorted, role, user])
+  const revisarCount = useMemo(()=> itemsVisible.filter(x=> /revisar/i.test(String(x.status||''))).length, [itemsVisible])
+  const aprovadaCount = useMemo(()=> itemsVisible.filter(x=> /aprovada/i.test(String(x.status||''))).length, [itemsVisible])
+  const onShowRevisar = ()=>{ setRoute('demandas'); setFiltros(prev=> ({ ...prev, status: 'Revisar' })) }
+  const onShowAprovada = ()=>{ setRoute('demandas'); setFiltros(prev=> ({ ...prev, status: 'Aprovada' })) }
  
   const [tableLimit, setTableLimit] = useState(10)
   const [calRef, setCalRef] = useState(new Date())
