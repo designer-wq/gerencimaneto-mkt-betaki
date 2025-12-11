@@ -1022,8 +1022,8 @@ export default function App() {
   const allRoutes = ['dashboard','demandas','config','cadastros','relatorios','usuarios']
   const allowedRoutes = useMemo(()=>{
     const p = user?.pages
-    if (!p) return allRoutes
-    return allRoutes.filter(r => p[r] !== false)
+    if (!p) return ['dashboard']
+    return allRoutes.filter(r => p[r] === true)
   },[user])
 
   useEffect(()=>{ if (!db) gravar(demandas) },[demandas, db])
@@ -1138,7 +1138,7 @@ export default function App() {
   },[db, user])
   useEffect(()=>{
     if (user && !allowedRoutes.includes(route)) {
-      setRoute(allowedRoutes[0])
+      setRoute(allowedRoutes[0] || 'dashboard')
     }
     if (!user && route!=='dashboard' && route!=='demandas' && route!=='config' && route!=='cadastros' && route!=='relatorios' && route!=='usuarios') {
       setRoute('dashboard')
@@ -1588,10 +1588,18 @@ function UsersView({ users, onCreate, onDelete, onUpdate, role }) {
     if (!newPwd) return
     if (fns) {
       try { const call = httpsCallable(fns, 'updateUserPassword'); await call({ username: u.username||u.id, password: newPwd, email: u.email||undefined }); setPwdEdit(prev=> ({ ...prev, [u.username||u.id]: '' })) } catch {}
+    } else {
+      // modo local: atualizar senha em localStorage
+      try {
+        const list = readUsers().map(x=> x.username===(u.username||u.id) ? { ...x, password: newPwd } : x)
+        writeUsers(list)
+        setPwdEdit(prev=> ({ ...prev, [u.username||u.id]: '' }))
+        refresh()
+      } catch {}
     }
   }
-  const togglePage = async (u, key)=>{ const cur=u.pages||{}; const patch = { pages: { ...cur, [key]: !(cur[key]!==false) } }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } else { onUpdate(u.username, patch); refresh() } }
-  const toggleAction = async (u, key)=>{ const cur=u.actions||{}; const patch = { actions: { ...cur, [key]: !(cur[key]!==false) } }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } else { onUpdate(u.username, patch); refresh() } }
+  const togglePage = async (u, key)=>{ const cur=u.pages||{}; const patch = { pages: { ...cur, [key]: !Boolean(cur[key]) } }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } else { onUpdate(u.username, patch); refresh() } }
+  const toggleAction = async (u, key)=>{ const cur=u.actions||{}; const patch = { actions: { ...cur, [key]: !Boolean(cur[key]) } }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } else { onUpdate(u.username, patch); refresh() } }
   const updateCargo = async (u, value)=>{ const patch = { cargo: value }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } else { onUpdate(u.username, patch); refresh() } }
   return (
     <div className="panel users-panel">
@@ -1653,14 +1661,14 @@ function UsersView({ users, onCreate, onDelete, onUpdate, role }) {
               <td>
                 <div className="chips">
                   {['dashboard','demandas','config','cadastros','relatorios','usuarios'].map(k=> (
-                    <button key={k} className={`btn-md ${(u.pages?.[k]!==false) ? 'active' : ''}`} type="button" onClick={()=> togglePage(u, k)}><span className="icon"><Icon name={k==='dashboard'?'dashboard': k==='demandas'?'demandas': k==='config'?'config': k==='cadastros'?'cadastros': k==='relatorios'?'relatorios':'usuarios'} /></span><span>{k==='dashboard'?'Dashboard': k==='demandas'?'Demandas': k==='config'?'Configurações': k==='cadastros'?'Cadastros': k==='relatorios'?'Relatórios':'Usuários'}</span></button>
+                    <button key={k} className={`btn-md ${(u.pages?.[k]===true) ? 'active' : ''}`} type="button" onClick={()=> togglePage(u, k)}><span className="icon"><Icon name={k==='dashboard'?'dashboard': k==='demandas'?'demandas': k==='config'?'config': k==='cadastros'?'cadastros': k==='relatorios'?'relatorios':'usuarios'} /></span><span>{k==='dashboard'?'Dashboard': k==='demandas'?'Demandas': k==='config'?'Configurações': k==='cadastros'?'Cadastros': k==='relatorios'?'Relatórios':'Usuários'}</span></button>
                   ))}
                 </div>
               </td>
               <td>
                 <div className="chips">
                   {[['criar','plus','Criar'], ['excluir','trash','Excluir'], ['visualizar','table','Visualizar']].map(([k,ico,label])=> (
-                    <button key={k} className={`btn-md ${(u.actions?.[k]!==false) ? 'active' : ''}`} type="button" onClick={()=> toggleAction(u, k)}><span className="icon"><Icon name={ico} /></span><span>{label}</span></button>
+                    <button key={k} className={`btn-md ${(u.actions?.[k]===true) ? 'active' : ''}`} type="button" onClick={()=> toggleAction(u, k)}><span className="icon"><Icon name={ico} /></span><span>{label}</span></button>
                   ))}
                 </div>
               </td>
