@@ -11,9 +11,18 @@ const envCfg = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 }
 const runtimeCfg = (typeof window !== 'undefined' && window.__FIREBASE_CONFIG__) || null
-const firebaseConfig = runtimeCfg || envCfg
+const defaultCfg = {
+  apiKey: "AIzaSyDLyfUo2DJYstogALIZbCz2qEg5IMC53gM",
+  authDomain: "mkt-betaki.firebaseapp.com",
+  projectId: "mkt-betaki",
+  storageBucket: "mkt-betaki.firebasestorage.app",
+  messagingSenderId: "992627837568",
+  appId: "1:992627837568:web:48019ba22070fd9af03465",
+}
+const hasEnv = !!(envCfg.apiKey && envCfg.authDomain && envCfg.projectId && envCfg.appId)
+const firebaseConfig = runtimeCfg || (hasEnv ? envCfg : defaultCfg)
 
-const enabled = !!(firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.projectId && firebaseConfig.appId)
+const enabled = !!(firebaseConfig && firebaseConfig.apiKey && firebaseConfig.authDomain && firebaseConfig.projectId && firebaseConfig.appId)
 const app = enabled ? initializeApp(firebaseConfig) : null
 export const db = app ? getFirestore(app) : null
 export const auth = app ? getAuth(app) : null
