@@ -394,8 +394,8 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
             <th>Data de Criação</th>
             <th>Prazo (dias)</th>
             <th>Tipo</th>
+            <th>Origem</th>
             <th>Link</th>
-            <th>File</th>
           </tr>
         </thead>
         <tbody>
@@ -414,6 +414,7 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
               <td>{fmtDM(it.dataCriacao)}</td>
               <td><span style={{color: (!isDoneStatus(it.status) && Number(daysLeft(it.prazo))<=1)?'#ef4444':'inherit'}}>{daysLeft(it.prazo)}</span></td>
               <td>{it.tipoMidia}</td>
+              <td>{it.origem || ''}</td>
               <td>{it.link ? <a href={it.link} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}>Visualizar</a> : ''}</td>
               <td>
                 {Array.isArray(it.arquivos) && it.arquivos.length ? (
@@ -1344,10 +1345,10 @@ export default function App() {
   const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, dataFeedback, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) => {
     const ensureCad = async () => {
       if (!db) return
-      try { if (tipoMidia) await setDoc(doc(db, 'cad_tipos', String(tipoMidia)), { name: tipoMidia }, { merge: true }) } catch {}
-      try { if (plataforma) await setDoc(doc(db, 'cad_plataformas', String(plataforma)), { name: plataforma }, { merge: true }) } catch {}
-      try { if (origem) await setDoc(doc(db, 'cad_origens', String(origem)), { name: origem }, { merge: true }) } catch {}
-      try { if (historico && Array.isArray(historico)) { const last = historico[0]; const st = last?.para || last?.de || 'Aberta'; if (st) await setDoc(doc(db, 'cad_status', String(st)), { name: st }, { merge: true }) } } catch {}
+      try { if (tipoMidia) await setDoc(doc(db, 'cad_tipos', String(tipoMidia)), { name: tipoMidia, active: true }, { merge: true }) } catch {}
+      try { if (plataforma) await setDoc(doc(db, 'cad_plataformas', String(plataforma)), { name: plataforma, active: true }, { merge: true }) } catch {}
+      try { if (origem) await setDoc(doc(db, 'cad_origens', String(origem)), { name: origem, active: true }, { merge: true }) } catch {}
+      try { if (historico && Array.isArray(historico)) { const last = historico[0]; const st = last?.para || last?.de || 'Aberta'; if (st) await setDoc(doc(db, 'cad_status', String(st)), { name: st, active: true }, { merge: true }) } } catch {}
     }
     if (modalMode==='edit' && editing) {
       const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, comentarios: comentarios ?? editing.comentarios, historico: historico ?? editing.historico, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, dataFeedback: dataFeedback || editing.dataFeedback, plataforma, prazo, origem, campanha }
