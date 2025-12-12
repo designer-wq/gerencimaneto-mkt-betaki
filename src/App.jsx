@@ -876,9 +876,9 @@ function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadPlat
     else if (tab==='plataforma') setCadPlataformas(arr)
     else setCadOrigens(arr)
   }
-  const addItem = async () => { const v = novo.trim(); if (!v) return; if (lista.includes(v)) return; const arr = [...lista, v]; setLista(arr); setNovo(''); if (tab==='status') setCadStatusColors(prev=> ({ ...prev, [v]: novoCor })); if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':tab==='plataforma'?'cad_plataformas':'cad_origens'; try { await setDoc(doc(db, col, v), { name: v, active: true }) } catch {} } }
-  const removeItem = async (v) => { const arr = lista.filter(x=>x!==v); setLista(arr); if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':tab==='plataforma'?'cad_plataformas':'cad_origens'; try { await deleteDoc(doc(db, col, v)) } catch {} } }
-  const toggleActive = async (v) => { if (!db) return; const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':tab==='plataforma'?'cad_plataformas':'cad_origens'; try { await setDoc(doc(db, col, v), { active: false }, { merge: true }) } catch {} }
+  const addItem = async () => { const v = novo.trim(); if (!v) return; if (lista.includes(v)) return; const arr = [...lista, v]; setLista(arr); setNovo(''); if (tab==='status') setCadStatusColors(prev=> ({ ...prev, [v]: novoCor })); if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':tab==='plataforma'?'cad_plataformas':'cad_origens'; try { await setDoc(doc(db, col, v), { name: v, active: true }) } catch (e) { try { window.alert(String(e?.code||e?.message||'Falha ao gravar cadastro')) } catch {} } } }
+  const removeItem = async (v) => { const arr = lista.filter(x=>x!==v); setLista(arr); if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':tab==='plataforma'?'cad_plataformas':'cad_origens'; try { await deleteDoc(doc(db, col, v)) } catch (e) { try { window.alert(String(e?.code||e?.message||'Falha ao remover cadastro')) } catch {} } } }
+  const toggleActive = async (v) => { if (!db) return; const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':tab==='plataforma'?'cad_plataformas':'cad_origens'; try { await setDoc(doc(db, col, v), { active: false }, { merge: true }) } catch (e) { try { window.alert(String(e?.code||e?.message||'Falha ao desativar cadastro')) } catch {} } }
   return (
     <div className="panel">
       <div className="tabs">
@@ -1042,6 +1042,7 @@ export default function App() {
       let unsubCadPlataformas = null
       let unsubCadOrigens = null
       let unsubUsuarios = null
+      let unsubUserMeta = null
       try {
         const uname = user?.username||''
         const isMgr = (user?.role==='admin' || user?.role==='gerente')
@@ -1053,6 +1054,24 @@ export default function App() {
           setDemandas(arr)
           setLoading(false)
         })
+      } catch {}
+      try {
+        const uid = user?.username||user?.id||''
+        if (uid) {
+          unsubUserMeta = onSnapshot(doc(db,'usuarios', uid), snap => {
+            const data = snap.exists() ? snap.data() : null
+            if (data) {
+              setUser(prev=> ({
+                ...prev,
+                pages: data.pages || prev.pages,
+                actions: data.actions || prev.actions,
+                cargo: data.cargo || prev.cargo,
+                name: data.name || prev.name,
+                role: data.role || prev.role
+              }))
+            }
+          })
+        }
       } catch {}
       try {
         unsubCadStatus = onSnapshot(collection(db, 'cad_status'), snap => {
@@ -1096,6 +1115,7 @@ export default function App() {
         try { unsubUsuarios && unsubUsuarios() } catch {}
         try { unsubCadPlataformas && unsubCadPlataformas() } catch {}
         try { unsubCadOrigens && unsubCadOrigens() } catch {}
+        try { unsubUserMeta && unsubUserMeta() } catch {}
       }
     }
   },[db, user])
@@ -1496,7 +1516,7 @@ function UsersView({ users, onCreate, onDelete, onUpdate, role }) {
     const newPwd = String(pwdEdit[u.username||u.id]||'').trim()
     if (!newPwd) return
     if (fns) {
-      try { const call = httpsCallable(fns, 'updateUserPassword'); await call({ username: u.username||u.id, password: newPwd, email: u.email||undefined }); setPwdEdit(prev=> ({ ...prev, [u.username||u.id]: '' })) } catch {}
+      try { const call = httpsCallable(fns, 'updateUserPassword'); await call({ username: u.username||u.id, password: newPwd, email: u.email||undefined }); setPwdEdit(prev=> ({ ...prev, [u.username||u.id]: '' })); try { window.alert('Senha atualizada com sucesso!') } catch {} } catch (e) { try { window.alert(String(e?.code||e?.message||'Falha ao atualizar senha')) } catch {} }
     }
   }
   const togglePage = async (u, key)=>{ const cur=u.pages||{}; const patch = { pages: { ...cur, [key]: !Boolean(cur[key]) } }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } }
