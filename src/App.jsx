@@ -1263,7 +1263,7 @@ export default function App() {
           ...(histMlabs ? [histMlabs] : []),
           ...(found.historico||[])
         ]
-        await updateDoc(doc(db, 'demandas', String(id)), { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : found.dataCriacao, dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : found.dataConclusao, dataFeedback: ((found.status!==status && String(status||'').toLowerCase().includes('feedback')) && !found.dataFeedback) ? today : found.dataFeedback, revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: histArr, tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.finishedAt, slaStartAt: found.slaStartAt, slaStopAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : found.slaStopAt, slaPauseMs: found.slaPauseMs, pauseStartedAt: found.pauseStartedAt, slaNetMs: found.slaNetMs, slaOk: found.slaOk, leadTotalMin: found.leadTotalMin, leadPorFase: found.leadPorFase })
+        await updateDoc(doc(db, 'demandas', String(id)), { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : (found.dataCriacao||null), dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : (found.dataConclusao||null), dataFeedback: (((found.status!==status && String(status||'').toLowerCase().includes('feedback')) && !found.dataFeedback) ? today : (found.dataFeedback??null)), revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: histArr, tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.finishedAt||null), slaStartAt: found.slaStartAt, slaStopAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.slaStopAt||null), slaPauseMs: found.slaPauseMs, pauseStartedAt: found.pauseStartedAt, slaNetMs: found.slaNetMs, slaOk: (found.slaOk??null), leadTotalMin: found.leadTotalMin, leadPorFase: found.leadPorFase })
         try { await addDoc(collection(db, 'historico_status'), histItem) } catch {}
       } catch {}
     }
@@ -1388,7 +1388,12 @@ export default function App() {
       setDemandas(prev=> [novo, ...prev])
       if (db) {
         try {
-          await setDoc(doc(db, 'demandas', String(tmpId)), { ...novo, id: undefined, createdAt: serverTimestamp() })
+          const store = { ...novo, createdAt: serverTimestamp() }
+          delete store.id
+          if (store.dataSolicitacao === undefined) store.dataSolicitacao = null
+          if (store.dataFeedback === undefined) store.dataFeedback = null
+          if (store.arquivoNome === undefined) store.arquivoNome = null
+          await setDoc(doc(db, 'demandas', String(tmpId)), store)
           const histFirst = { ...inicial, id_demanda: tmpId }
           try { await addDoc(collection(db, 'historico_status'), histFirst) } catch {}
         } catch (e) {
