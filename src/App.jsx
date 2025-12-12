@@ -1001,8 +1001,8 @@ export default function App() {
   const allRoutes = ['dashboard','demandas','config','cadastros','relatorios','usuarios']
   const allowedRoutes = useMemo(()=>{
     const p = user?.pages
-    if (!p) return ['dashboard']
-    return allRoutes.filter(r => p[r] === true)
+    const arr = p ? allRoutes.filter(r => p[r] === true) : ['dashboard']
+    return (arr && arr.length) ? arr : ['dashboard']
   },[user])
 
   useEffect(()=>{ /* Firebase somente: sem persistência local */ },[demandas, db])
@@ -1017,7 +1017,17 @@ export default function App() {
     const unsub = onAuthStateChanged(auth, async (cur)=>{
       if (cur) {
         let meta = null
-        try { const snap = await getDoc(doc(db, 'usuarios', cur.uid)); if (snap.exists()) meta = snap.data() } catch {}
+        try {
+          const email = cur.email||''
+          const uname = (email.split('@')[0]||'').trim()
+          if (uname) {
+            const s1 = await getDoc(doc(db, 'usuarios', uname))
+            if (s1.exists()) meta = s1.data()
+          }
+        } catch {}
+        if (!meta) {
+          try { const s2 = await getDoc(doc(db, 'usuarios', cur.uid)); if (s2.exists()) meta = s2.data() } catch {}
+        }
         if (!meta) {
           try { const q = query(collection(db, 'usuarios'), where('email','==', cur.email||'')); const snap = await getDocs(q); snap.forEach(d=>{ if (!meta) meta = d.data() }) } catch {}
         }
