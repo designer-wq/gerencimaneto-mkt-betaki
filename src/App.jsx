@@ -1023,8 +1023,10 @@ export default function App() {
         }
         const u = { username: meta?.username || (cur.email||'').split('@')[0], name: meta?.name || cur.displayName || (cur.email||''), role: meta?.role || 'comum', pages: meta?.pages || null, actions: meta?.actions || null, cargo: meta?.cargo || '' }
         setUser(u)
+        setLoading(false)
       } else {
         setUser(null)
+        setLoading(false)
       }
     })
     return ()=>{ try { unsub() } catch {} }
@@ -1053,7 +1055,7 @@ export default function App() {
           snap.forEach(d => arr.push({ id: d.id, ...d.data() }))
           setDemandas(arr)
           setLoading(false)
-        })
+        }, err => { try { setLoading(false) } catch {}; try { window.alert(String(err?.code||err?.message||'Falha ao carregar demandas')) } catch {} })
       } catch {}
       try {
         const uid = user?.username||user?.id||''
@@ -1070,7 +1072,7 @@ export default function App() {
                 role: data.role || prev.role
               }))
             }
-          })
+          }, err => { try { window.alert(String(err?.code||err?.message||'Falha ao sincronizar usuário')) } catch {} })
         }
       } catch {}
       try {
@@ -1078,35 +1080,35 @@ export default function App() {
           const arr = []
           snap.forEach(d => arr.push(d.data()?.name || d.id))
           setCadStatus(arr)
-        })
+        }, err => { try { window.alert(String(err?.code||err?.message||'Falha ao carregar status')) } catch {} })
       } catch {}
       try {
         unsubCadTipos = onSnapshot(collection(db, 'cad_tipos'), snap => {
           const arr = []
           snap.forEach(d => { const data=d.data(); if ((data?.active)!==false) arr.push(data?.name || d.id) })
           setCadTipos(arr)
-        })
+        }, err => { try { window.alert(String(err?.code||err?.message||'Falha ao carregar tipos')) } catch {} })
       } catch {}
       try {
         unsubUsuarios = onSnapshot(collection(db, 'usuarios'), snap => {
           const arr = []
           snap.forEach(d => arr.push({ id: d.id, ...d.data() }))
           setUsersAll(arr)
-        })
+        }, err => { try { window.alert(String(err?.code||err?.message||'Falha ao carregar usuários')) } catch {} })
       } catch {}
       try {
         unsubCadPlataformas = onSnapshot(collection(db, 'cad_plataformas'), snap => {
           const arr = []
           snap.forEach(d => { const data=d.data(); if ((data?.active)!==false) arr.push(data?.name || d.id) })
           setCadPlataformas(arr)
-        })
+        }, err => { try { window.alert(String(err?.code||err?.message||'Falha ao carregar plataformas')) } catch {} })
       } catch {}
       try {
         unsubCadOrigens = onSnapshot(collection(db, 'cad_origens'), snap => {
           const arr = []
           snap.forEach(d => { const data=d.data(); if ((data?.active)!==false) arr.push(data?.name || d.id) })
           setCadOrigens(arr)
-        })
+        }, err => { try { window.alert(String(err?.code||err?.message||'Falha ao carregar origens')) } catch {} })
       } catch {}
       return ()=>{
         try { unsubDemandas && unsubDemandas() } catch {}
