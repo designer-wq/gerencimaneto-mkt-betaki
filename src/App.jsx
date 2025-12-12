@@ -1388,9 +1388,8 @@ export default function App() {
       setDemandas(prev=> [novo, ...prev])
       if (db) {
         try {
-          const ref = await addDoc(collection(db, 'demandas'), { ...novo, id: undefined, createdAt: serverTimestamp() })
-          setDemandas(prev=> prev.map(x=> x.id===tmpId ? { ...x, id: ref.id } : x))
-          const histFirst = { ...inicial, id_demanda: ref.id }
+          await setDoc(doc(db, 'demandas', String(tmpId)), { ...novo, id: undefined, createdAt: serverTimestamp() })
+          const histFirst = { ...inicial, id_demanda: tmpId }
           try { await addDoc(collection(db, 'historico_status'), histFirst) } catch {}
         } catch (e) {
           const msg = e?.code || e?.message || 'Falha ao gravar no Firebase'
