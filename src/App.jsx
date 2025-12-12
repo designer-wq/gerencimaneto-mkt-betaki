@@ -394,7 +394,6 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
             <th>Data de Criação</th>
             <th>Prazo (dias)</th>
             <th>Tipo</th>
-            <th>Plataforma</th>
             <th>Link</th>
             <th>File</th>
           </tr>
@@ -415,7 +414,6 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
               <td>{fmtDM(it.dataCriacao)}</td>
               <td><span style={{color: (!isDoneStatus(it.status) && Number(daysLeft(it.prazo))<=1)?'#ef4444':'inherit'}}>{daysLeft(it.prazo)}</span></td>
               <td>{it.tipoMidia}</td>
-              <td>{it.plataforma || ''}</td>
               <td>{it.link ? <a href={it.link} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}>Visualizar</a> : ''}</td>
               <td>
                 {Array.isArray(it.arquivos) && it.arquivos.length ? (
@@ -884,7 +882,6 @@ function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadPlat
     <div className="panel">
       <div className="tabs">
         <button className={`tab ${tab==='tipo'?'active':''}`} onClick={()=>setTab('tipo')}>Tipo</button>
-        <button className={`tab ${tab==='plataforma'?'active':''}`} onClick={()=>setTab('plataforma')}>Plataforma</button>
         <button className={`tab ${tab==='origem'?'active':''}`} onClick={()=>setTab('origem')}>Origem</button>
       </div>
       <div className="form-row" style={{marginTop:10}}>
