@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app'
-import { getFirestore } from 'firebase/firestore'
+import { initializeFirestore } from 'firebase/firestore'
 import { getAuth, setPersistence, browserSessionPersistence } from 'firebase/auth'
 
 const envCfg = {
@@ -27,7 +27,7 @@ let app = null
 if (enabled) {
   try { app = initializeApp(firebaseConfig) } catch (e) { try { app = initializeApp(defaultCfg) } catch {} }
 }
-export const db = app ? getFirestore(app) : null
+export const db = app ? initializeFirestore(app, { experimentalAutoDetectLongPolling: true }) : null
 export const auth = app ? getAuth(app) : null
 if (auth) {
   try { setPersistence(auth, browserSessionPersistence).catch(()=>{}) } catch {}

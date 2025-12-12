@@ -1360,14 +1360,21 @@ export default function App() {
       const hoje = hojeISO()
       const nowIso = new Date().toISOString()
       const inicial = { tipo:'status', autor: userLabel, data: hoje, data_hora_evento: nowIso, status_anterior: '', status_novo: 'Aberta', duracao_em_minutos: null, responsavel: userLabel, id_demanda: null, de: '', para: 'Aberta' }
-      const previsaoIA = calcPrevisaoIA(demandas, { designer, tipoMidia, prazo, revisoes: 0, plataforma, origem })
-      const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: hoje, dataFeedback: undefined, status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null, finishedAt: null, revisoes: 0, createdBy: userLabel, previsaoIA, slaStartAt: null, slaStopAt: null, slaPauseMs: 0, pauseStartedAt: null, slaNetMs: 0, slaOk: null, leadTotalMin: 0, leadPorFase: {} }
+      const designerFinal = user?.username || designer
+      const previsaoIA = calcPrevisaoIA(demandas, { designer: designerFinal, tipoMidia, prazo, revisoes: 0, plataforma, origem })
+      const tmpId = `tmp-${Date.now()}`
+      const novo = { id: tmpId, designer: designerFinal, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: hoje, dataFeedback: undefined, status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null, finishedAt: null, revisoes: 0, createdBy: userLabel, previsaoIA, slaStartAt: null, slaStopAt: null, slaPauseMs: 0, pauseStartedAt: null, slaNetMs: 0, slaOk: null, leadTotalMin: 0, leadPorFase: {} }
+      setDemandas(prev=> [novo, ...prev])
       if (db) {
         try {
-          const ref = await addDoc(collection(db, 'demandas'), { ...novo, createdAt: serverTimestamp() })
+          const ref = await addDoc(collection(db, 'demandas'), { ...novo, id: undefined, createdAt: serverTimestamp() })
+          setDemandas(prev=> prev.map(x=> x.id===tmpId ? { ...x, id: ref.id } : x))
           const histFirst = { ...inicial, id_demanda: ref.id }
           try { await addDoc(collection(db, 'historico_status'), histFirst) } catch {}
-        } catch {}
+        } catch (e) {
+          const msg = e?.code || e?.message || 'Falha ao gravar no Firebase'
+          try { window.alert(String(msg)) } catch {}
+        }
       }
       await ensureCad()
     }
