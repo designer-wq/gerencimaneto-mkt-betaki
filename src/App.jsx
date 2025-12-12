@@ -690,12 +690,6 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
               {mode==='create' && (
                 <div className="form-row"><label>Titulo</label><input value={titulo} onChange={e=>setTitulo(e.target.value)} required /></div>
               )}
-              <div className="form-row"><label>Plataforma</label>
-                <select value={plataforma} onChange={e=>setPlataforma(e.target.value)}>
-                  <option value="">Plataforma</option>
-                  {(cadPlataformas||[]).map(p=> <option key={p} value={p}>{p}</option>)}
-                </select>
-              </div>
               <div className="form-row"><label>Origem da Demanda</label>
                 <select value={origem} onChange={e=>setOrigem(e.target.value)} required>
                   <option value="">Origem</option>
@@ -881,22 +875,25 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
   )
 }
 
-function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadOrigens, setCadOrigens, cadStatusColors, setCadStatusColors }) {
+function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadPlataformas, setCadPlataformas, cadOrigens, setCadOrigens, cadStatusColors, setCadStatusColors }) {
   const [tab, setTab] = useState('tipo')
   const [novo, setNovo] = useState('')
   const [novoCor, setNovoCor] = useState('#f59e0b')
-  const lista = tab==='status' ? cadStatus : tab==='tipo' ? cadTipos : cadOrigens
+  const lista = tab==='status' ? cadStatus : tab==='tipo' ? cadTipos : tab==='plataforma' ? cadPlataformas : cadOrigens
   const setLista = (arr) => {
     if (tab==='status') setCadStatus(arr)
     else if (tab==='tipo') setCadTipos(arr)
+    else if (tab==='plataforma') setCadPlataformas(arr)
     else setCadOrigens(arr)
   }
-  const addItem = async () => { const v = novo.trim(); if (!v) return; if (lista.includes(v)) return; const arr = [...lista, v]; setLista(arr); setNovo(''); if (tab==='status') setCadStatusColors(prev=> ({ ...prev, [v]: novoCor })); if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':'cad_origens'; try { await setDoc(doc(db, col, v), { name: v }) } catch {} } }
-  const removeItem = async (v) => { const arr = lista.filter(x=>x!==v); setLista(arr); if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':'cad_origens'; try { await deleteDoc(doc(db, col, v)) } catch {} } }
+  const addItem = async () => { const v = novo.trim(); if (!v) return; if (lista.includes(v)) return; const arr = [...lista, v]; setLista(arr); setNovo(''); if (tab==='status') setCadStatusColors(prev=> ({ ...prev, [v]: novoCor })); if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':tab==='plataforma'?'cad_plataformas':'cad_origens'; try { await setDoc(doc(db, col, v), { name: v, active: true }) } catch {} } }
+  const removeItem = async (v) => { const arr = lista.filter(x=>x!==v); setLista(arr); if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':tab==='plataforma'?'cad_plataformas':'cad_origens'; try { await deleteDoc(doc(db, col, v)) } catch {} } }
+  const toggleActive = async (v) => { if (!db) return; const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':tab==='plataforma'?'cad_plataformas':'cad_origens'; try { await setDoc(doc(db, col, v), { active: false }, { merge: true }) } catch {} }
   return (
     <div className="panel">
       <div className="tabs">
         <button className={`tab ${tab==='tipo'?'active':''}`} onClick={()=>setTab('tipo')}>Tipo</button>
+        <button className={`tab ${tab==='plataforma'?'active':''}`} onClick={()=>setTab('plataforma')}>Plataforma</button>
         <button className={`tab ${tab==='origem'?'active':''}`} onClick={()=>setTab('origem')}>Origem</button>
       </div>
       <div className="form-row" style={{marginTop:10}}>
@@ -906,6 +903,11 @@ function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadOrig
           {tab==='status' && <input type="color" value={novoCor} onChange={e=>setNovoCor(e.target.value)} title="Cor" />}
           <button className="primary" onClick={addItem}>Adicionar</button>
         </div>
+      </div>
+      <div className="form-row" style={{marginTop:10}}>
+        <select>
+          {lista.map(v => (<option key={v} value={v}>{v}</option>))}
+        </select>
       </div>
       <div className="list" style={{marginTop:12}}>
         {lista.length===0 ? <div className="empty">Sem itens</div> : (
@@ -917,6 +919,7 @@ function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadOrig
               </div>
               <div style={{display:'flex',alignItems:'center',gap:8}}>
                 {tab==='status' && <input type="color" value={cadStatusColors[v] || '#3b82f6'} onChange={e=> setCadStatusColors(prev=> ({ ...prev, [v]: e.target.value }))} />}
+                <button className="icon" onClick={()=>toggleActive(v)} title="Desativar"><Icon name="minus" /></button>
                 <button className="icon" onClick={()=>removeItem(v)}><Icon name="trash" /></button>
               </div>
             </div>
@@ -1072,7 +1075,7 @@ export default function App() {
       try {
         unsubCadTipos = onSnapshot(collection(db, 'cad_tipos'), snap => {
           const arr = []
-          snap.forEach(d => arr.push(d.data()?.name || d.id))
+          snap.forEach(d => { const data=d.data(); if ((data?.active)!==false) arr.push(data?.name || d.id) })
           setCadTipos(arr)
         })
       } catch {}
@@ -1086,14 +1089,14 @@ export default function App() {
       try {
         unsubCadPlataformas = onSnapshot(collection(db, 'cad_plataformas'), snap => {
           const arr = []
-          snap.forEach(d => arr.push(d.data()?.name || d.id))
+          snap.forEach(d => { const data=d.data(); if ((data?.active)!==false) arr.push(data?.name || d.id) })
           setCadPlataformas(arr)
         })
       } catch {}
       try {
         unsubCadOrigens = onSnapshot(collection(db, 'cad_origens'), snap => {
           const arr = []
-          snap.forEach(d => arr.push(d.data()?.name || d.id))
+          snap.forEach(d => { const data=d.data(); if ((data?.active)!==false) arr.push(data?.name || d.id) })
           setCadOrigens(arr)
         })
       } catch {}
@@ -1444,7 +1447,7 @@ export default function App() {
             <ConfigView themeVars={themeVars} setThemeVars={setThemeVars} onReset={onResetSystem} appSettings={appSettings} setAppSettings={setAppSettings} />
           )}
           {user && route==='cadastros' && allowedRoutes.includes('cadastros') && (
-            <CadastrosView cadStatus={cadStatus} setCadStatus={setCadStatus} cadTipos={cadTipos} setCadTipos={setCadTipos} cadOrigens={cadOrigens} setCadOrigens={setCadOrigens} cadStatusColors={cadStatusColors} setCadStatusColors={setCadStatusColors} />
+            <CadastrosView cadStatus={cadStatus} setCadStatus={setCadStatus} cadTipos={cadTipos} setCadTipos={setCadTipos} cadPlataformas={cadPlataformas} setCadPlataformas={setCadPlataformas} cadOrigens={cadOrigens} setCadOrigens={setCadOrigens} cadStatusColors={cadStatusColors} setCadStatusColors={setCadStatusColors} />
           )}
           {user && route==='relatorios' && allowedRoutes.includes('relatorios') && (
             <ReportsView demandas={demandas} items={itemsVisible} designers={designersVisible} filtros={filtros} setFiltros={setFiltros} loading={loading} />
