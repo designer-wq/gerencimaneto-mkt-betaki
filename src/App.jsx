@@ -219,7 +219,7 @@ function LoginView({ onLogin }) {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const submit = async (e)=>{ e.preventDefault(); if (loading) return; setError(''); setLoading(true); try { await onLogin(username, password) } catch (err) { const msg = (err && (err.code || err.message)) || 'Falha ao entrar'; setError(String(msg)) } finally { setLoading(false) } }
+  const submit = async (e)=>{ e.preventDefault(); if (loading) return; setError(''); setLoading(true); try { await onLogin(username, password) } catch (err) { const code=String(err?.code||''); const msg = code==='auth/operation-not-allowed' ? 'Domínio não autorizado no Firebase Auth. Adicione o domínio do site nas configurações.' : (err && (err.code || err.message)) || 'Falha ao entrar'; setError(String(msg)) } finally { setLoading(false) } }
   return (
     <div className="login-wrap">
       <div className="login-banner">BANNER TELA LOGIN</div>
