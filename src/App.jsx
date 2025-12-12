@@ -586,8 +586,8 @@ function CalendarView({ items, refDate }) {
   )
 }
 
-function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, cadPlataformas, onDelete, userLabel, canDelete, onAddComment, cadOrigens }) {
-  const [designer, setDesigner] = useState(initial?.designer || '')
+function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, cadPlataformas, onDelete, userLabel, canDelete, onAddComment, cadOrigens, currentUser }) {
+  const [designer, setDesigner] = useState(initial?.designer || currentUser || '')
   const [tipoMidia, setTipoMidia] = useState(initial?.tipoMidia || 'Post')
   const [titulo, setTitulo] = useState(initial?.titulo || '')
   const [link, setLink] = useState(initial?.link || '')
@@ -606,7 +606,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
   const [campanha, setCampanha] = useState(initial?.campanha || '')
   const [modelo, setModelo] = useState('')
   useEffect(()=>{
-    setDesigner(initial?.designer || '')
+    setDesigner(initial?.designer || currentUser || '')
     setTipoMidia(initial?.tipoMidia || 'Post')
     setTitulo(initial?.titulo || '')
     setLink(initial?.link || '')
@@ -1346,6 +1346,7 @@ export default function App() {
       if (!db) return
       try { if (tipoMidia) await setDoc(doc(db, 'cad_tipos', String(tipoMidia)), { name: tipoMidia }, { merge: true }) } catch {}
       try { if (plataforma) await setDoc(doc(db, 'cad_plataformas', String(plataforma)), { name: plataforma }, { merge: true }) } catch {}
+      try { if (origem) await setDoc(doc(db, 'cad_origens', String(origem)), { name: origem }, { merge: true }) } catch {}
       try { if (historico && Array.isArray(historico)) { const last = historico[0]; const st = last?.para || last?.de || 'Aberta'; if (st) await setDoc(doc(db, 'cad_status', String(st)), { name: st }, { merge: true }) } } catch {}
     }
     if (modalMode==='edit' && editing) {
@@ -1422,7 +1423,7 @@ export default function App() {
             {view==='calendar' && (
             <CalendarView items={itemsVisible} refDate={calRef} />
             )}
-            <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} designers={designersVisible} cadPlataformas={cadPlataformas} onDelete={onDelete} userLabel={userLabel} canDelete={canDelete} onAddComment={onAddComment} cadOrigens={cadOrigens} />
+            <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} designers={designersVisible} cadPlataformas={cadPlataformas} onDelete={onDelete} userLabel={userLabel} canDelete={canDelete} onAddComment={onAddComment} cadOrigens={cadOrigens} currentUser={user?.username||''} />
             <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designersVisible} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} cadTipos={cadTipos} origens={cadOrigens} campanhas={campanhas} />
           </div>
             </div>
