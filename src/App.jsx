@@ -660,16 +660,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
           )}
           <button className="icon" onClick={onClose}><Icon name="close" /></button>
         </div>
-        {mode==='create' && (
-          <div className="modal-body">
-            <div className="form-row"><label>Modelo</label>
-              <select value={modelo} onChange={e=>{ const v=e.target.value; setModelo(v); applyModelo(v) }}>
-                <option value="">Selecione um modelo</option>
-                {['Post IG - Feed','Story IG','Banner Ads','Vídeo Motion'].map(n=> (<option key={n} value={n}>{n}</option>))}
-              </select>
-            </div>
-          </div>
-        )}
+        
         <div className={`status-bar ${statusClass(initial?.status || 'Aberta')}`}>
           <div>{initial?.status || 'Aberta'}</div>
           {mode!=='create' && (<div className="timer"><span className="icon"><Icon name="clock" /></span><span>{fmtHMS(totalMs)}</span></div>)}
