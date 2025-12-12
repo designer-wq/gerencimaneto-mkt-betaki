@@ -1151,11 +1151,9 @@ export default function App() {
   const onNew = ()=>{ if (!user || !canCreate) return; setModalMode('create'); setEditing(null); setModalOpen(true) }
   const onEdit = it => { if (!user || !canView) return; setModalMode('edit'); setEditing(it); setModalOpen(true) }
   const onDuplicate = async (it) => {
-    const base = { ...it, id: undefined, status: 'Aberta', dataSolicitacao: hojeISO(), dataCriacao: hojeISO() }
-    const nextId = proxId(demandas)
-    setDemandas(prev=> [...prev, { ...base, id: nextId }])
+    const base = { ...it, status: 'Aberta', dataSolicitacao: hojeISO(), dataCriacao: hojeISO() }
     if (db) {
-      try { await setDoc(doc(db, 'demandas', String(nextId)), { ...base, id: nextId, createdAt: serverTimestamp() }) } catch {}
+      try { await addDoc(collection(db, 'demandas'), { ...base, createdAt: serverTimestamp() }) } catch {}
     }
   }
   const onStatus = async (id, status) => {
@@ -1362,12 +1360,10 @@ export default function App() {
       const inicial = { tipo:'status', autor: userLabel, data: hoje, data_hora_evento: nowIso, status_anterior: '', status_novo: 'Aberta', duracao_em_minutos: null, responsavel: userLabel, id_demanda: null, de: '', para: 'Aberta' }
       const previsaoIA = calcPrevisaoIA(demandas, { designer, tipoMidia, prazo, revisoes: 0, plataforma, origem })
       const novo = { designer, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: hoje, dataFeedback: undefined, status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null, finishedAt: null, revisoes: 0, createdBy: userLabel, previsaoIA, slaStartAt: null, slaStopAt: null, slaPauseMs: 0, pauseStartedAt: null, slaNetMs: 0, slaOk: null, leadTotalMin: 0, leadPorFase: {} }
-      const nextId = proxId(demandas)
-      setDemandas(prev=> [...prev, { ...novo, id: nextId, fxNewAt: Date.now() }])
       if (db) {
         try {
-          await setDoc(doc(db, 'demandas', String(nextId)), { ...novo, id: nextId, createdAt: serverTimestamp() })
-          const histFirst = { ...inicial, id_demanda: nextId }
+          const ref = await addDoc(collection(db, 'demandas'), { ...novo, createdAt: serverTimestamp() })
+          const histFirst = { ...inicial, id_demanda: ref.id }
           try { await addDoc(collection(db, 'historico_status'), histFirst) } catch {}
         } catch {}
       }
