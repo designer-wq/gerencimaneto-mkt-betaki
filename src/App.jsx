@@ -8,6 +8,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions'
 const ESTADOS = ["Aberta", "Em Progresso", "Concluída"]
 const FIXED_STATUS = ["Pendente","Em produção","Aguardando Feedback","Aprovada","Revisar","Concluida"]
 const ORIGENS = ["Instagram","Tráfego Pago","CRM","Influencers","Site","Branding","Outros"]
+const DEM_COL = 'demandas_v2'
 const statusLabel = s => s === "Aberta" ? "Aberta" : s === "Em Progresso" ? "Em Progresso" : s === "Concluída" ? "Concluída" : s
 const statusWithDot = s => statusLabel(s)
 const statusClass = s => {
@@ -1048,7 +1049,7 @@ export default function App() {
       let unsubUsuarios = null
       let unsubUserMeta = null
       try {
-        const base = collection(db, 'demandas')
+        const base = collection(db, DEM_COL)
         unsubDemandas = onSnapshot(base, snap => {
           const arr = []
           snap.forEach(d => arr.push({ id: d.id, ...d.data() }))
@@ -1175,7 +1176,7 @@ export default function App() {
   const onDuplicate = async (it) => {
     const base = { ...it, status: 'Aberta', dataSolicitacao: hojeISO(), dataCriacao: hojeISO() }
     if (db) {
-      try { await addDoc(collection(db, 'demandas'), { ...base, createdAt: serverTimestamp() }) } catch {}
+      try { await addDoc(collection(db, DEM_COL), { ...base, createdAt: serverTimestamp() }) } catch {}
     }
   }
   const onStatus = async (id, status) => {
@@ -1263,7 +1264,7 @@ export default function App() {
           ...(histMlabs ? [histMlabs] : []),
           ...(found.historico||[])
         ]
-        await updateDoc(doc(db, 'demandas', String(id)), { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : (found.dataCriacao||null), dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : (found.dataConclusao||null), dataFeedback: (((found.status!==status && String(status||'').toLowerCase().includes('feedback')) && !found.dataFeedback) ? today : (found.dataFeedback??null)), revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: histArr, tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.finishedAt||null), slaStartAt: found.slaStartAt, slaStopAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.slaStopAt||null), slaPauseMs: found.slaPauseMs, pauseStartedAt: found.pauseStartedAt, slaNetMs: found.slaNetMs, slaOk: (found.slaOk??null), leadTotalMin: found.leadTotalMin, leadPorFase: found.leadPorFase })
+        await updateDoc(doc(db, DEM_COL, String(id)), { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : (found.dataCriacao||null), dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : (found.dataConclusao||null), dataFeedback: (((found.status!==status && String(status||'').toLowerCase().includes('feedback')) && !found.dataFeedback) ? today : (found.dataFeedback??null)), revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: histArr, tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.finishedAt||null), slaStartAt: found.slaStartAt, slaStopAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.slaStopAt||null), slaPauseMs: found.slaPauseMs, pauseStartedAt: found.pauseStartedAt, slaNetMs: found.slaNetMs, slaOk: (found.slaOk??null), leadTotalMin: found.leadTotalMin, leadPorFase: found.leadPorFase })
         try { await addDoc(collection(db, 'historico_status'), histItem) } catch {}
       } catch {}
     }
@@ -1281,7 +1282,7 @@ export default function App() {
       try {
         const notif = (Array.isArray(c.mentions) && c.mentions.length>0) ? { tipo:'notificacao', autor: userLabel, data: c.data, data_hora_evento: new Date().toISOString(), mensagem: 'Você foi mencionado', mentions: c.mentions, id_demanda: found.id } : null
         const histArr = notif ? [notif, h, ...(found.historico||[])] : [h, ...(found.historico||[])]
-        await updateDoc(doc(db, 'demandas', String(id)), { comentarios: [c, ...(found.comentarios||[])], historico: histArr })
+        await updateDoc(doc(db, DEM_COL, String(id)), { comentarios: [c, ...(found.comentarios||[])], historico: histArr })
       } catch {}
     }
   }
@@ -1297,14 +1298,14 @@ export default function App() {
     if (db && found) {
       try {
         const histItem = { tipo:'grupo', autor: userLabel, data: today, campo: campo, valor: valor, id_demanda: found.id }
-        await updateDoc(doc(db, 'demandas', String(id)), { ...found, [campo]: valor, historico: [histItem, ...(found.historico||[])] }) }
+        await updateDoc(doc(db, DEM_COL, String(id)), { ...found, [campo]: valor, historico: [histItem, ...(found.historico||[])] }) }
       catch {}
     }
   }
   const onDelete = async (id) => {
     setDemandas(prev=> prev.map(x=> x.id===id ? ({ ...x, fxDeleting:true }) : x))
     setTimeout(()=>{ setDemandas(prev=> prev.filter(x=> x.id!==id)) }, 180)
-    if (db) { try { await deleteDoc(doc(db, 'demandas', String(id))) } catch {} }
+    if (db) { try { await deleteDoc(doc(db, DEM_COL, String(id))) } catch {} }
   }
 
   const pushAlert = async (id, mensagem) => {
@@ -1324,7 +1325,7 @@ export default function App() {
     if (db) {
       try {
         const hist = { tipo:'alerta', autor: userLabel, data: today, data_hora_evento: new Date().toISOString(), mensagem, id_demanda: found.id }
-        await updateDoc(doc(db, 'demandas', String(id)), { ...found, historico: [hist, ...(found.historico||[])] })
+        await updateDoc(doc(db, DEM_COL, String(id)), { ...found, historico: [hist, ...(found.historico||[])] })
       } catch {}
     }
   }
@@ -1375,7 +1376,7 @@ export default function App() {
       const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, comentarios: comentarios ?? editing.comentarios, historico: historico ?? editing.historico, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, dataFeedback: dataFeedback || editing.dataFeedback, plataforma, prazo, origem, campanha }
       const updatedView = { ...updated, fxSavedAt: Date.now() }
       setDemandas(prev=> prev.map(x=> x.id===editing.id ? updatedView : x))
-      if (db) { try { await updateDoc(doc(db, 'demandas', String(editing.id)), updated) } catch {} }
+      if (db) { try { await updateDoc(doc(db, DEM_COL, String(editing.id)), updated) } catch {} }
       await ensureCad()
     } else {
       const hoje = hojeISO()
@@ -1393,7 +1394,7 @@ export default function App() {
           if (store.dataSolicitacao === undefined) store.dataSolicitacao = null
           if (store.dataFeedback === undefined) store.dataFeedback = null
           if (store.arquivoNome === undefined) store.arquivoNome = null
-          await setDoc(doc(db, 'demandas', String(tmpId)), store)
+          await setDoc(doc(db, DEM_COL, String(tmpId)), store)
           const histFirst = { ...inicial, id_demanda: tmpId }
           try { await addDoc(collection(db, 'historico_status'), histFirst) } catch {}
         } catch (e) {
@@ -1412,9 +1413,9 @@ export default function App() {
     try { setFiltros({designer:'',status:'',plataforma:'',tipoMidia:'',origem:'',campanha:'',cIni:'',cFim:'',sIni:'',sFim:''}) } catch {}
     if (db) {
       try {
-        const snap = await getDocs(collection(db, 'demandas'))
+        const snap = await getDocs(collection(db, DEM_COL))
         const tasks = []
-        snap.forEach(docSnap=> tasks.push(deleteDoc(doc(db, 'demandas', docSnap.id))))
+        snap.forEach(docSnap=> tasks.push(deleteDoc(doc(db, DEM_COL, docSnap.id))))
         if (tasks.length) await Promise.all(tasks)
       } catch {}
     }
