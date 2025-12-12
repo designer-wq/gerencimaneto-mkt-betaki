@@ -1505,7 +1505,7 @@ function UsersView({ users, onCreate, onDelete, onUpdate, role }) {
   const [urole, setUrole] = useState('comum')
   const [cargo, setCargo] = useState('Designer')
   const [list, setList] = useState([])
-  const fns = useMemo(()=> (firebaseApp ? getFunctions(firebaseApp) : null), [])
+  const fns = useMemo(()=> (firebaseApp ? getFunctions(firebaseApp, 'us-central1') : null), [])
   const [pwdEdit, setPwdEdit] = useState({})
   useEffect(()=>{ if (db) { const unsub = onSnapshot(collection(db,'usuarios'), s=>{ const arr=[]; s.forEach(d=> arr.push({ id:d.id, ...d.data() })); setList(arr) }); return ()=>{ try{unsub()}catch{} } } else { setList([]) } },[])
   const [pages, setPages] = useState({ dashboard:true, demandas:true, config:true, cadastros:true, relatorios:true, usuarios:true })
