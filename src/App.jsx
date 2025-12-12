@@ -966,17 +966,13 @@ export default function App() {
   const campanhas = useMemo(()=> Array.from(new Set(demandas.map(x=>x.campanha).filter(Boolean))).sort(), [demandas])
   const role = user?.role||'comum'
   const items = useMemo(()=> aplicarFiltros(demandas, filtros), [demandas, filtros])
-  const dashItems = useMemo(()=>{
-    if (role==='admin' || role==='gerente') return items
-    const uname = user?.username||''
-    return items.filter(x=> (x.designer||'')===uname)
-  }, [items, role, user])
-  const dashDesigners = useMemo(()=> (role==='admin'||role==='gerente') ? designers : [user?.username].filter(Boolean), [designers, role, user])
+  const dashItems = useMemo(()=> items, [items])
+  const dashDesigners = useMemo(()=> designers, [designers])
   const itemsSorted = useMemo(()=> items.slice().sort((a,b)=>{
     const da = a.dataCriacao||''; const db = b.dataCriacao||''; const c = db.localeCompare(da); if (c!==0) return c; const ia = a.id||0; const ib = b.id||0; return ib - ia
   }), [items])
-  const designersVisible = useMemo(()=> (role==='admin'||role==='gerente') ? designers : [user?.username].filter(Boolean), [designers, role, user])
-  const itemsVisible = useMemo(()=> (role==='admin'||role==='gerente') ? itemsSorted : itemsSorted.filter(x=> (x.designer||'')===(user?.username||'')), [itemsSorted, role, user])
+  const designersVisible = useMemo(()=> designers, [designers])
+  const itemsVisible = useMemo(()=> itemsSorted, [itemsSorted])
   const revisarCount = useMemo(()=> itemsVisible.filter(x=> /revisar/i.test(String(x.status||''))).length, [itemsVisible])
   const aprovadaCount = useMemo(()=> itemsVisible.filter(x=> /aprovada/i.test(String(x.status||''))).length, [itemsVisible])
   const onShowRevisar = ()=>{ setRoute('demandas'); setFiltros(prev=> ({ ...prev, status: 'Revisar' })) }
@@ -999,11 +995,7 @@ export default function App() {
   const [groupBy, setGroupBy] = useState('status')
   const userLabel = useMemo(()=> user?.name || user?.username || 'Você', [user])
   const allRoutes = ['dashboard','demandas','config','cadastros','relatorios','usuarios']
-  const allowedRoutes = useMemo(()=>{
-    const p = user?.pages
-    const arr = p ? allRoutes.filter(r => p[r] === true) : ['dashboard']
-    return (arr && arr.length) ? arr : ['dashboard']
-  },[user])
+  const allowedRoutes = useMemo(()=> allRoutes, [])
 
   useEffect(()=>{ /* Firebase somente: sem persistência local */ },[demandas, db])
   useEffect(()=>{ if (!db) setLoading(false) },[db])
@@ -1056,11 +1048,8 @@ export default function App() {
       let unsubUsuarios = null
       let unsubUserMeta = null
       try {
-        const uname = user?.username||''
-        const isMgr = (user?.role==='admin' || user?.role==='gerente')
         const base = collection(db, 'demandas')
-        const q = isMgr ? base : query(base, where('designer','==', uname))
-        unsubDemandas = onSnapshot(q, snap => {
+        unsubDemandas = onSnapshot(base, snap => {
           const arr = []
           snap.forEach(d => arr.push({ id: d.id, ...d.data() }))
           setDemandas(arr)
