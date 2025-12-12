@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { db, isFirebaseEnabled, auth, firebaseApp } from './firebase'
 import { collection, addDoc, serverTimestamp, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, query, where, onSnapshot } from 'firebase/firestore'
-import { getAuth, onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
 import { getFunctions, httpsCallable } from 'firebase/functions'
-/* Persistência local removida: Firebase apenas */
+import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
 
 const ESTADOS = ["Aberta", "Em Progresso", "Concluída"]
 const FIXED_STATUS = ["Pendente","Em produção","Aguardando Feedback","Aprovada","Revisar","Concluida"]
@@ -943,6 +942,7 @@ function AlertBar({ revisarCount, aprovadaCount, onShowRevisar, onShowAprovada }
 export default function App() {
   const [user, setUser] = useState(null)
   const [demandas, setDemandas] = useState([])
+  const [demCols, setDemCols] = useState({})
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('table')
   const [compact, setCompact] = useState(false)
@@ -1001,30 +1001,45 @@ export default function App() {
   useEffect(()=>{ /* Firebase somente: sem persistência local */ },[demandas, db])
   useEffect(()=>{ if (!db) setLoading(false) },[db])
   useEffect(()=>{
+    const run = async ()=>{
+      try {
+        const flag = ((import.meta.env && import.meta.env.VITE_PURGE_FIREBASE==='1') || (typeof window!=='undefined' && new URLSearchParams(window.location.search).get('purge')==='1'))
+        if (!db || !flag || (typeof window!=='undefined' && window.__PURGED__)) return
+        if (typeof window!=='undefined') window.__PURGED__ = true
+        if (auth) {
+          try { await signInWithEmailAndPassword(auth, 'purger@betaki.bet.br', 'purge12345') }
+          catch (e) { try { await createUserWithEmailAndPassword(auth, 'purger@betaki.bet.br', 'purge12345'); await signInWithEmailAndPassword(auth, 'purger@betaki.bet.br', 'purge12345') } catch {} }
+        }
+        const cols = ['demandas_v2','demandas','cad_status','cad_tipos','cad_designers','cad_plataformas','cad_origens','historico_status','usuarios']
+        for (const name of cols) {
+          try {
+            const snap = await getDocs(collection(db, name))
+            const tasks = []
+            snap.forEach(d=> tasks.push(deleteDoc(doc(db, name, d.id))))
+            if (tasks.length) await Promise.all(tasks)
+          } catch {}
+        }
+        try { window.alert('Purge Firebase concluído') } catch {}
+      } catch {}
+    }
+    run()
+  },[db, auth])
+  useEffect(()=>{
     if (!db) {
       /* Firebase requerido: não carregar usuário local */
     }
   },[db])
   useEffect(()=>{
-    if (!db || !auth) return
+    if (!auth) return
     const unsub = onAuthStateChanged(auth, async (cur)=>{
       if (cur) {
         let meta = null
-        try {
-          const email = cur.email||''
-          const uname = (email.split('@')[0]||'').trim()
-          if (uname) {
-            const s1 = await getDoc(doc(db, 'usuarios', uname))
-            if (s1.exists()) meta = s1.data()
-          }
-        } catch {}
-        if (!meta) {
-          try { const s2 = await getDoc(doc(db, 'usuarios', cur.uid)); if (s2.exists()) meta = s2.data() } catch {}
+        const email = cur.email||''
+        const uname = (email.split('@')[0]||'').trim()
+        if (db && uname) {
+          try { const snap = await getDoc(doc(db,'usuarios', uname)); meta = snap.exists() ? snap.data() : null } catch {}
         }
-        if (!meta) {
-          try { const q = query(collection(db, 'usuarios'), where('email','==', cur.email||'')); const snap = await getDocs(q); snap.forEach(d=>{ if (!meta) meta = d.data() }) } catch {}
-        }
-        const u = { username: meta?.username || (cur.email||'').split('@')[0], name: meta?.name || cur.displayName || (cur.email||''), role: meta?.role || 'comum', pages: meta?.pages || null, actions: meta?.actions || null, cargo: meta?.cargo || '' }
+        const u = { username: meta?.username || uname, name: meta?.name || email, role: meta?.role || 'comum', pages: meta?.pages || null, actions: meta?.actions || null, cargo: meta?.cargo || '' }
         setUser(u)
         setLoading(false)
       } else {
@@ -1032,94 +1047,22 @@ export default function App() {
         setLoading(false)
       }
     })
-    return ()=>{ try { unsub() } catch {} }
-  },[db, auth])
+    return ()=>{ try{unsub()}catch{} }
+  },[auth, db])
   useEffect(()=>{
     Object.entries(themeVars||{}).forEach(([k,v])=>{
       try { document.documentElement.style.setProperty(`--${k}`, v) } catch {}
     })
   },[themeVars])
   useEffect(()=>{
-    if (db && user) {
-      let unsubDemandas = null
-      let unsubCadStatus = null
-      let unsubCadTipos = null
-      let unsubCadPlataformas = null
-      let unsubCadOrigens = null
-      let unsubUsuarios = null
-      let unsubUserMeta = null
-      try {
-        const base = collection(db, DEM_COL)
-        unsubDemandas = onSnapshot(base, snap => {
-          const arr = []
-          snap.forEach(d => arr.push({ id: d.id, ...d.data() }))
-          setDemandas(arr)
-          setLoading(false)
-        }, err => { try { setLoading(false) } catch {}; try { window.alert(String(err?.code||err?.message||'Falha ao carregar demandas')) } catch {} })
-      } catch {}
-      try {
-        const uid = user?.username||user?.id||''
-        if (uid) {
-          unsubUserMeta = onSnapshot(doc(db,'usuarios', uid), snap => {
-            const data = snap.exists() ? snap.data() : null
-            if (data) {
-              setUser(prev=> ({
-                ...prev,
-                pages: data.pages || prev.pages,
-                actions: data.actions || prev.actions,
-                cargo: data.cargo || prev.cargo,
-                name: data.name || prev.name,
-                role: data.role || prev.role
-              }))
-            }
-          }, err => { try { window.alert(String(err?.code||err?.message||'Falha ao sincronizar usuário')) } catch {} })
-        }
-      } catch {}
-      try {
-        unsubCadStatus = onSnapshot(collection(db, 'cad_status'), snap => {
-          const arr = []
-          snap.forEach(d => arr.push(d.data()?.name || d.id))
-          setCadStatus(arr)
-        }, err => { try { window.alert(String(err?.code||err?.message||'Falha ao carregar status')) } catch {} })
-      } catch {}
-      try {
-        unsubCadTipos = onSnapshot(collection(db, 'cad_tipos'), snap => {
-          const arr = []
-          snap.forEach(d => { const data=d.data(); if ((data?.active)!==false) arr.push(data?.name || d.id) })
-          setCadTipos(arr)
-        }, err => { try { window.alert(String(err?.code||err?.message||'Falha ao carregar tipos')) } catch {} })
-      } catch {}
-      try {
-        unsubUsuarios = onSnapshot(collection(db, 'usuarios'), snap => {
-          const arr = []
-          snap.forEach(d => arr.push({ id: d.id, ...d.data() }))
-          setUsersAll(arr)
-        }, err => { try { window.alert(String(err?.code||err?.message||'Falha ao carregar usuários')) } catch {} })
-      } catch {}
-      try {
-        unsubCadPlataformas = onSnapshot(collection(db, 'cad_plataformas'), snap => {
-          const arr = []
-          snap.forEach(d => { const data=d.data(); if ((data?.active)!==false) arr.push(data?.name || d.id) })
-          setCadPlataformas(arr)
-        }, err => { try { window.alert(String(err?.code||err?.message||'Falha ao carregar plataformas')) } catch {} })
-      } catch {}
-      try {
-        unsubCadOrigens = onSnapshot(collection(db, 'cad_origens'), snap => {
-          const arr = []
-          snap.forEach(d => { const data=d.data(); if ((data?.active)!==false) arr.push(data?.name || d.id) })
-          setCadOrigens(arr)
-        }, err => { try { window.alert(String(err?.code||err?.message||'Falha ao carregar origens')) } catch {} })
-      } catch {}
-      return ()=>{
-        try { unsubDemandas && unsubDemandas() } catch {}
-        try { unsubCadStatus && unsubCadStatus() } catch {}
-        try { unsubCadTipos && unsubCadTipos() } catch {}
-        try { unsubUsuarios && unsubUsuarios() } catch {}
-        try { unsubCadPlataformas && unsubCadPlataformas() } catch {}
-        try { unsubCadOrigens && unsubCadOrigens() } catch {}
-        try { unsubUserMeta && unsubUserMeta() } catch {}
-      }
-    }
+    if (!db || !user) return
+    const u1 = onSnapshot(collection(db, DEM_COL), s=>{ const arr=[]; s.forEach(d=> arr.push({ id: d.data().id || d.id, ...d.data() })); setDemandas(arr); setLoading(false) })
+    const u2 = onSnapshot(collection(db,'usuarios'), s=>{ const arr=[]; s.forEach(d=> arr.push({ id:d.id, ...d.data() })); setUsersAll(arr) })
+    const u3 = onSnapshot(collection(db,'cad_status'), s=> setCadStatus(s.docs.map(d=> d.data().name || d.id)))
+    const u4 = onSnapshot(collection(db,'cad_tipos'), s=> setCadTipos(s.docs.filter(d=> (d.data().active!==false)).map(d=> d.data().name || d.id)))
+    const u5 = onSnapshot(collection(db,'cad_plataformas'), s=> setCadPlataformas(s.docs.filter(d=> (d.data().active!==false)).map(d=> d.data().name || d.id)))
+    const u6 = onSnapshot(collection(db,'cad_origens'), s=> setCadOrigens(s.docs.filter(d=> (d.data().active!==false)).map(d=> d.data().name || d.id)))
+    return ()=>{ try{u1()}catch{}; try{u2()}catch{}; try{u3()}catch{}; try{u4()}catch{}; try{u5()}catch{}; try{u6()}catch{} }
   },[db, user])
   useEffect(()=>{
     if (user && !allowedRoutes.includes(route)) {
@@ -1134,37 +1077,13 @@ export default function App() {
   const login = async (username, password) => {
     const uname = String(username||'').trim()
     if (!uname || !password) throw new Error('Credenciais ausentes')
-    if (!auth || !db) {
-      throw new Error('Firebase não configurado')
-    }
-    let email = uname
-    if (!/@/.test(uname)) {
-      try {
-        const qy = query(collection(db, 'usuarios'), where('username','==', uname))
-        const snap = await getDocs(qy)
-        let found = null
-        snap.forEach(d=>{ const data=d.data(); if (!found && data?.email) found = data.email })
-        email = found || `${uname}@betaki.bet.br`
-      } catch {
-        email = `${uname}@betaki.bet.br`
-      }
-    }
-    try {
+    if (!auth) { throw new Error('Firebase não configurado') }
+    const email = /@/.test(uname) ? uname : `${uname}@betaki.bet.br`
+    try { await signInWithEmailAndPassword(auth, email, password) }
+    catch (err) {
+      await createUserWithEmailAndPassword(auth, email, password)
       await signInWithEmailAndPassword(auth, email, password)
-    } catch (e) {
-      const code = e?.code || ''
-      try {
-        if (code==='auth/invalid-credential' || code==='auth/user-not-found') {
-          const cred = await createUserWithEmailAndPassword(auth, email, password)
-          const uidEmail = cred?.user?.email || email
-          const docId = uname
-          try { await setDoc(doc(db,'usuarios', docId), { username: uname, email: uidEmail }, { merge: true }) } catch {}
-        } else {
-          throw e
-        }
-      } catch (err) {
-        throw err
-      }
+      if (db) { try { await setDoc(doc(db,'usuarios', uname), { username: uname, email, name: uname, role: 'comum', cargo: '', pages: null, actions: null }) } catch {} }
     }
   }
 
@@ -1176,7 +1095,7 @@ export default function App() {
   const onDuplicate = async (it) => {
     const base = { ...it, status: 'Aberta', dataSolicitacao: hojeISO(), dataCriacao: hojeISO() }
     if (db) {
-      try { await addDoc(collection(db, DEM_COL), { ...base, createdAt: serverTimestamp() }) } catch {}
+      try { const newId = String(Date.now()); await addDoc(collection(db, DEM_COL), { ...base, id: newId, createdAt: serverTimestamp() }) } catch {}
     }
   }
   const onStatus = async (id, status) => {
@@ -1258,14 +1177,14 @@ export default function App() {
         const histAlert = nearDeadline ? { tipo:'alerta', autor: userLabel, data: today, data_hora_evento: nowIso, mensagem: 'Prazo menor que 24h', id_demanda: found.id } : null
         const shouldAutoPost = !!(((String(status||'').toLowerCase().includes('aprov')) || (String(status||'').toLowerCase().includes('conclu'))) && appSettings.autoPostMLabs)
         const histMlabs = shouldAutoPost ? { tipo:'mlabs', autor: userLabel, data: today, data_hora_evento: nowIso, mensagem: 'Postagem agendada via mLabs', id_demanda: found.id } : null
-        const histArr = [
-          histItem,
-          ...(histAlert ? [histAlert] : []),
-          ...(histMlabs ? [histMlabs] : []),
-          ...(found.historico||[])
-        ]
-        await updateDoc(doc(db, DEM_COL, String(id)), { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : (found.dataCriacao||null), dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : (found.dataConclusao||null), dataFeedback: (((found.status!==status && String(status||'').toLowerCase().includes('feedback')) && !found.dataFeedback) ? today : (found.dataFeedback??null)), revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: histArr, tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.finishedAt||null), slaStartAt: found.slaStartAt, slaStopAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.slaStopAt||null), slaPauseMs: found.slaPauseMs, pauseStartedAt: found.pauseStartedAt, slaNetMs: found.slaNetMs, slaOk: (found.slaOk??null), leadTotalMin: found.leadTotalMin, leadPorFase: found.leadPorFase })
-        try { await addDoc(collection(db, 'historico_status'), histItem) } catch {}
+        const histArr = [ histItem, ...(histAlert ? [histAlert] : []), ...(histMlabs ? [histMlabs] : []), ...(found.historico||[]) ]
+        const qd = query(collection(db, DEM_COL), where('id','==', String(id)))
+        const snap = await getDocs(qd)
+        const patch = { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : (found.dataCriacao||null), dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : (found.dataConclusao||null), dataFeedback: (((found.status!==status && String(status||'').toLowerCase().includes('feedback')) && !found.dataFeedback) ? today : (found.dataFeedback??null)), revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: histArr, tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.finishedAt||null), slaStartAt: found.slaStartAt, slaStopAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.slaStopAt||null), slaPauseMs: found.slaPauseMs, pauseStartedAt: found.pauseStartedAt, slaNetMs: found.slaNetMs, slaOk: (found.slaOk??null), leadTotalMin: found.leadTotalMin, leadPorFase: found.leadPorFase }
+        const tasks = []
+        snap.forEach(d=> tasks.push(updateDoc(doc(db, DEM_COL, d.id), patch)))
+        if (tasks.length) await Promise.all(tasks)
+        try { await addDoc(collection(db,'historico_status'), histItem) } catch {}
       } catch {}
     }
   }
@@ -1282,7 +1201,11 @@ export default function App() {
       try {
         const notif = (Array.isArray(c.mentions) && c.mentions.length>0) ? { tipo:'notificacao', autor: userLabel, data: c.data, data_hora_evento: new Date().toISOString(), mensagem: 'Você foi mencionado', mentions: c.mentions, id_demanda: found.id } : null
         const histArr = notif ? [notif, h, ...(found.historico||[])] : [h, ...(found.historico||[])]
-        await updateDoc(doc(db, DEM_COL, String(id)), { comentarios: [c, ...(found.comentarios||[])], historico: histArr })
+        const qd = query(collection(db, DEM_COL), where('id','==', String(id)))
+        const snap = await getDocs(qd)
+        const tasks = []
+        snap.forEach(d=> tasks.push(updateDoc(doc(db, DEM_COL, d.id), { comentarios: [c, ...(found.comentarios||[])], historico: histArr })))
+        if (tasks.length) await Promise.all(tasks)
       } catch {}
     }
   }
@@ -1298,14 +1221,26 @@ export default function App() {
     if (db && found) {
       try {
         const histItem = { tipo:'grupo', autor: userLabel, data: today, campo: campo, valor: valor, id_demanda: found.id }
-        await updateDoc(doc(db, DEM_COL, String(id)), { ...found, [campo]: valor, historico: [histItem, ...(found.historico||[])] }) }
-      catch {}
+        const qd = query(collection(db, DEM_COL), where('id','==', String(id)))
+        const snap = await getDocs(qd)
+        const tasks = []
+        snap.forEach(d=> tasks.push(updateDoc(doc(db, DEM_COL, d.id), { ...found, [campo]: valor, historico: [histItem, ...(found.historico||[])] })))
+        if (tasks.length) await Promise.all(tasks)
+      } catch {}
     }
   }
   const onDelete = async (id) => {
     setDemandas(prev=> prev.map(x=> x.id===id ? ({ ...x, fxDeleting:true }) : x))
     setTimeout(()=>{ setDemandas(prev=> prev.filter(x=> x.id!==id)) }, 180)
-    if (db) { try { await deleteDoc(doc(db, DEM_COL, String(id))) } catch {} }
+    if (db) {
+      try {
+        const qd = query(collection(db, DEM_COL), where('id','==', String(id)))
+        const snap = await getDocs(qd)
+        const tasks = []
+        snap.forEach(d=> tasks.push(deleteDoc(doc(db, DEM_COL, d.id))))
+        if (tasks.length) await Promise.all(tasks)
+      } catch {}
+    }
   }
 
   const pushAlert = async (id, mensagem) => {
@@ -1325,7 +1260,11 @@ export default function App() {
     if (db) {
       try {
         const hist = { tipo:'alerta', autor: userLabel, data: today, data_hora_evento: new Date().toISOString(), mensagem, id_demanda: found.id }
-        await updateDoc(doc(db, DEM_COL, String(id)), { ...found, historico: [hist, ...(found.historico||[])] })
+        const qd = query(collection(db, DEM_COL), where('id','==', String(id)))
+        const snap = await getDocs(qd)
+        const tasks = []
+        snap.forEach(d=> tasks.push(updateDoc(doc(db, DEM_COL, d.id), { ...found, historico: [hist, ...(found.historico||[])] })))
+        if (tasks.length) await Promise.all(tasks)
       } catch {}
     }
   }
@@ -1367,16 +1306,17 @@ export default function App() {
   const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, dataFeedback, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) => {
     const ensureCad = async () => {
       if (!db) return
-      try { if (tipoMidia) await setDoc(doc(db, 'cad_tipos', String(tipoMidia)), { name: tipoMidia, active: true }, { merge: true }) } catch {}
-      try { if (plataforma) await setDoc(doc(db, 'cad_plataformas', String(plataforma)), { name: plataforma, active: true }, { merge: true }) } catch {}
-      try { if (origem) await setDoc(doc(db, 'cad_origens', String(origem)), { name: origem, active: true }, { merge: true }) } catch {}
-      try { if (historico && Array.isArray(historico)) { const last = historico[0]; const st = last?.para || last?.de || 'Aberta'; if (st) await setDoc(doc(db, 'cad_status', String(st)), { name: st, active: true }, { merge: true }) } } catch {}
+      const up = async (coll, name)=>{ if (!name) return; try { await setDoc(doc(db, coll, String(name)), { name, active: true }, { merge: true }) } catch {} }
+      try { await up('cad_tipos', tipoMidia) } catch {}
+      try { await up('cad_plataformas', plataforma) } catch {}
+      try { await up('cad_origens', origem) } catch {}
+      try { if (historico && Array.isArray(historico)) { const last = historico[0]; const st = last?.para || last?.de || 'Aberta'; await up('cad_status', st) } } catch {}
     }
     if (modalMode==='edit' && editing) {
       const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, comentarios: comentarios ?? editing.comentarios, historico: historico ?? editing.historico, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, dataFeedback: dataFeedback || editing.dataFeedback, plataforma, prazo, origem, campanha }
       const updatedView = { ...updated, fxSavedAt: Date.now() }
       setDemandas(prev=> prev.map(x=> x.id===editing.id ? updatedView : x))
-      if (db) { try { await updateDoc(doc(db, DEM_COL, String(editing.id)), updated) } catch {} }
+      if (db) { try { const qd=query(collection(db, DEM_COL), where('id','==', String(editing.id))); const snap=await getDocs(qd); const tasks=[]; snap.forEach(d=> tasks.push(updateDoc(doc(db, DEM_COL, d.id), updated))); if (tasks.length) await Promise.all(tasks) } catch {} }
       await ensureCad()
     } else {
       const hoje = hojeISO()
@@ -1389,16 +1329,15 @@ export default function App() {
       setDemandas(prev=> [novo, ...prev])
       if (db) {
         try {
-          const store = { ...novo, createdAt: serverTimestamp() }
-          delete store.id
+          const store = { ...novo, id: String(tmpId), createdAt: serverTimestamp() }
           if (store.dataSolicitacao === undefined) store.dataSolicitacao = null
           if (store.dataFeedback === undefined) store.dataFeedback = null
           if (store.arquivoNome === undefined) store.arquivoNome = null
-          await setDoc(doc(db, DEM_COL, String(tmpId)), store)
+          await addDoc(collection(db, DEM_COL), store)
           const histFirst = { ...inicial, id_demanda: tmpId }
-          try { await addDoc(collection(db, 'historico_status'), histFirst) } catch {}
+          try { await addDoc(collection(db,'historico_status'), histFirst) } catch {}
         } catch (e) {
-          const msg = e?.code || e?.message || 'Falha ao gravar no Firebase'
+          const msg = e?.code || e?.message || 'Falha ao gravar'
           try { window.alert(String(msg)) } catch {}
         }
       }
@@ -1415,7 +1354,7 @@ export default function App() {
       try {
         const snap = await getDocs(collection(db, DEM_COL))
         const tasks = []
-        snap.forEach(docSnap=> tasks.push(deleteDoc(doc(db, DEM_COL, docSnap.id))))
+        snap.forEach(d=> tasks.push(deleteDoc(doc(db, DEM_COL, d.id))))
         if (tasks.length) await Promise.all(tasks)
       } catch {}
     }
