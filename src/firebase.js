@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app'
-import { initializeFirestore } from 'firebase/firestore'
-import { getAuth, setPersistence, browserSessionPersistence } from 'firebase/auth'
+import { initializeFirestore, memoryLocalCache } from 'firebase/firestore'
+import { getAuth, setPersistence, inMemoryPersistence } from 'firebase/auth'
 
 const firebaseConfig = {
   apiKey: "AIzaSyDLyfUo2DJYstogALIZbCz2qEg5IMC53gM",
@@ -13,8 +13,8 @@ const firebaseConfig = {
 
 let app = null
 try { app = initializeApp(firebaseConfig) } catch {}
-export const db = app ? initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false }) : null
+export const db = app ? initializeFirestore(app, { localCache: memoryLocalCache(), experimentalForceLongPolling: true, useFetchStreams: false }) : null
 export const auth = app ? getAuth(app) : null
-if (auth) { try { setPersistence(auth, browserSessionPersistence).catch(()=>{}) } catch {} }
+if (auth) { try { setPersistence(auth, inMemoryPersistence).catch(()=>{}) } catch {} }
 export const isFirebaseEnabled = !!app
 export const firebaseApp = app

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { db, isFirebaseEnabled, auth, firebaseApp } from './firebase'
 import { collection, addDoc, serverTimestamp, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, query, where, onSnapshot } from 'firebase/firestore'
 import { getFunctions, httpsCallable } from 'firebase/functions'
@@ -165,6 +165,8 @@ function Icon({ name, size=18 }) {
   if (name==='logout') return (<svg {...s}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>)
   if (name==='link') return (<svg {...s}><path d="M10 13a5 5 0 0 0 7.07 0l3.54-3.54a5 5 0 1 0-7.07-7.07L10 4"/><path d="M14 11a5 5 0 0 1-7.07 0L3.39 7.46a5 5 0 1 1 7.07-7.07L14 4"/></svg>)
   if (name==='tag') return (<svg {...s}><path d="M20 10V4H14L4 14l6 6 10-10Z"/><circle cx="16.5" cy="7.5" r="1.5"/></svg>)
+  if (name==='edit') return (<svg {...s}><path d="M4 13v4h4"/><path d="M14.5 3.5l6 6"/><path d="M12 6l6 6L9 21H4v-5z"/></svg>)
+  if (name==='minus') return (<svg {...s}><path d="M5 12h14"/></svg>)
   return null
 }
 
@@ -643,8 +645,9 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
   const baseMs = Number(initial?.tempoProducaoMs||0)
   const startedAtMs = initial?.startedAt ? Date.parse(initial.startedAt) : null
   const isProdNow = /produ|progresso/i.test(String(initial?.status||''))
-  const [fallbackStart] = useState(()=> (!startedAtMs && isProdNow) ? Date.now() : null)
-  const effectiveStart = startedAtMs ?? fallbackStart
+  const fallbackStartRef = useRef(null)
+  useEffect(()=>{ if (!startedAtMs && isProdNow && !fallbackStartRef.current) { fallbackStartRef.current = Date.now() } if (startedAtMs || !isProdNow) { fallbackStartRef.current = null } }, [startedAtMs, isProdNow])
+  const effectiveStart = startedAtMs ?? fallbackStartRef.current
   const totalMs = baseMs + (effectiveStart ? Math.max(0, nowTs - effectiveStart) : 0)
   const [openStep, setOpenStep] = useState(null)
   if (!open) return null
@@ -689,7 +692,9 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
               <div className="form-row"><label>Campanha</label>
                 <input value={campanha} onChange={e=>setCampanha(e.target.value)} placeholder="Ex: Black Friday" />
               </div>
-              <div className="form-row"><label>Link</label><input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://" /></div>
+              {mode!=='create' && (
+                <div className="form-row"><label>Link</label><input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://" /></div>
+              )}
               {mode==='create' ? (
                 <div className="row-2">
                   <div className="form-row"><label>Arquivo</label>
@@ -876,6 +881,27 @@ function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadPlat
     else if (tab==='plataforma') setCadPlataformas(arr)
     else setCadOrigens(arr)
   }
+  const [editVals, setEditVals] = useState({})
+  const startEdit = (v) => setEditVals(prev=> ({ ...prev, [v]: v }))
+  const cancelEdit = (v) => setEditVals(prev=> { const n={...prev}; delete n[v]; return n })
+  const saveEdit = async (v) => {
+    const newV = String(editVals[v]||'').trim()
+    if (!newV || newV===v) { cancelEdit(v); return }
+    const arr = lista.map(x=> x===v ? newV : x)
+    setLista(arr)
+    if (tab==='status') {
+      const color = cadStatusColors[v]
+      setCadStatusColors(prev=> { const m={...prev}; if (color) { delete m[v]; m[newV]=color } return m })
+    }
+    if (db) {
+      const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':tab==='plataforma'?'cad_plataformas':'cad_origens'
+      try {
+        await setDoc(doc(db, col, newV), { name: newV, active: true }, { merge: true })
+        try { await deleteDoc(doc(db, col, v)) } catch {}
+      } catch (e) { try { window.alert(String(e?.code||e?.message||'Falha ao renomear')) } catch {} }
+    }
+    cancelEdit(v)
+  }
   const addItem = async () => { const v = novo.trim(); if (!v) return; if (lista.includes(v)) return; const arr = [...lista, v]; setLista(arr); setNovo(''); if (tab==='status') setCadStatusColors(prev=> ({ ...prev, [v]: novoCor })); if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':tab==='plataforma'?'cad_plataformas':'cad_origens'; try { await setDoc(doc(db, col, v), { name: v, active: true }) } catch (e) { try { window.alert(String(e?.code||e?.message||'Falha ao gravar cadastro')) } catch {} } } }
   const removeItem = async (v) => { const arr = lista.filter(x=>x!==v); setLista(arr); if (db) { const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':tab==='plataforma'?'cad_plataformas':'cad_origens'; try { await deleteDoc(doc(db, col, v)) } catch (e) { try { window.alert(String(e?.code||e?.message||'Falha ao remover cadastro')) } catch {} } } }
   const toggleActive = async (v) => { if (!db) return; const col = tab==='status'?'cad_status':tab==='tipo'?'cad_tipos':tab==='plataforma'?'cad_plataformas':'cad_origens'; try { await setDoc(doc(db, col, v), { active: false }, { merge: true }) } catch (e) { try { window.alert(String(e?.code||e?.message||'Falha ao desativar cadastro')) } catch {} } }
@@ -904,10 +930,22 @@ function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadPlat
             <div key={v} className="list-item" style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px',border:'1px solid var(--border)',borderRadius:8,background:'#0b0e12',marginBottom:6}}>
               <div style={{display:'flex',alignItems:'center',gap:8}}>
                 {tab==='status' && <span className="status-dot" style={{background: cadStatusColors[v] || '#3b82f6'}} />}
-                <div>{v}</div>
+                {editVals[v]!=null ? (
+                  <input value={editVals[v]} onChange={e=> setEditVals(prev=> ({ ...prev, [v]: e.target.value }))} />
+                ) : (
+                  <div>{v}</div>
+                )}
               </div>
               <div style={{display:'flex',alignItems:'center',gap:8}}>
                 {tab==='status' && <input type="color" value={cadStatusColors[v] || '#3b82f6'} onChange={e=> setCadStatusColors(prev=> ({ ...prev, [v]: e.target.value }))} />}
+                {editVals[v]==null ? (
+                  <button className="icon" onClick={()=>startEdit(v)} title="Editar"><Icon name="edit" /></button>
+                ) : (
+                  <>
+                    <button className="icon" onClick={()=>saveEdit(v)} title="Salvar"><Icon name="check" /></button>
+                    <button className="icon" onClick={()=>cancelEdit(v)} title="Cancelar"><Icon name="close" /></button>
+                  </>
+                )}
                 <button className="icon" onClick={()=>toggleActive(v)} title="Desativar"><Icon name="minus" /></button>
                 <button className="icon" onClick={()=>removeItem(v)}><Icon name="trash" /></button>
               </div>
@@ -1100,6 +1138,7 @@ export default function App() {
   }
   const onStatus = async (id, status) => {
     const today = hojeISO()
+    let nextItem = null
     setDemandas(prev=> prev.map(x=> {
       if (String(x.id)!==String(id)) return x
       const changed = x.status !== status
@@ -1138,7 +1177,7 @@ export default function App() {
       const revisoes = changed && isRev ? (x.revisoes||0)+1 : (x.revisoes||0)
       const isDone = String(status||'').toLowerCase().includes('concluida') || status==='Concluída'
       const dataConclusao = isDone ? (x.dataConclusao||today) : x.dataConclusao
-      const dataCriacao = isDone ? (x.dataCriacao||today) : x.dataCriacao
+      const dataCriacao = (changed && isFeedback && !x.dataCriacao) ? today : x.dataCriacao
       if (changed && isDone) { finishedAt = new Date(nowMs).toISOString(); slaStopAt = finishedAt }
       const prevStatusEvent = (x.historico||[]).find(ev=> ev.tipo==='status')
       const prevTs = prevStatusEvent?.data_hora_evento ? Date.parse(prevStatusEvent.data_hora_evento) : (prevStatusEvent?.data ? Date.parse(`${prevStatusEvent.data}T00:00:00Z`) : null)
@@ -1162,9 +1201,13 @@ export default function App() {
       const slaNetMs = (()=>{ if(!slaStartAt) return 0; const end = (slaStopAt ? Date.parse(slaStopAt) : nowMs); const start = Date.parse(slaStartAt); if(isNaN(start)||isNaN(end)) return 0; return Math.max(0, end - start - slaPauseMs) })()
       const slaOk = (()=>{ if(!dataConclusao || !x.prazo) return null; try { return String(dataConclusao) <= String(x.prazo) } catch { return null } })()
       const previsaoIA = calcPrevisaoIA(prev, { ...x, status })
-      return { ...x, status, revisoes, dataConclusao, dataCriacao, dataFeedback: nextFeedback, historico, tempoProducaoMs, startedAt, finishedAt, previsaoIA, fxBounceAt: changed ? nowMs : (x.fxBounceAt||0), slaStartAt, slaStopAt, slaPauseMs, pauseStartedAt, slaNetMs, slaOk, leadTotalMin, leadPorFase }
+      nextItem = { ...x, status, revisoes, dataConclusao, dataCriacao, dataFeedback: nextFeedback, historico, tempoProducaoMs, startedAt, finishedAt, previsaoIA, fxBounceAt: changed ? nowMs : (x.fxBounceAt||0), slaStartAt, slaStopAt, slaPauseMs, pauseStartedAt, slaNetMs, slaOk, leadTotalMin, leadPorFase }
+      return nextItem
     }))
-    const found = demandas.find(x=> String(x.id)===String(id))
+    if (editing && String(editing.id)===String(id) && nextItem) {
+      try { setEditing(nextItem) } catch {}
+    }
+    const found = nextItem
     if (db && found) {
       try {
         const prevStatusEvent = (found.historico||[]).find(ev=> ev.tipo==='status')
@@ -1180,7 +1223,7 @@ export default function App() {
         const histArr = [ histItem, ...(histAlert ? [histAlert] : []), ...(histMlabs ? [histMlabs] : []), ...(found.historico||[]) ]
         const qd = query(collection(db, DEM_COL), where('id','==', String(id)))
         const snap = await getDocs(qd)
-        const patch = { ...found, status, dataCriacao: ((String(status||'').toLowerCase().includes('concluida') || status==='Concluída')) ? (found.dataCriacao||today) : (found.dataCriacao||null), dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : (found.dataConclusao||null), dataFeedback: (((found.status!==status && String(status||'').toLowerCase().includes('feedback')) && !found.dataFeedback) ? today : (found.dataFeedback??null)), revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: histArr, tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.finishedAt||null), slaStartAt: found.slaStartAt, slaStopAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.slaStopAt||null), slaPauseMs: found.slaPauseMs, pauseStartedAt: found.pauseStartedAt, slaNetMs: found.slaNetMs, slaOk: (found.slaOk??null), leadTotalMin: found.leadTotalMin, leadPorFase: found.leadPorFase }
+        const patch = { ...found, status, dataCriacao: ((found.status!==status && String(status||'').toLowerCase().includes('feedback') && !found.dataCriacao) ? today : (found.dataCriacao??null)), dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : (found.dataConclusao||null), dataFeedback: (((found.status!==status && String(status||'').toLowerCase().includes('feedback')) && !found.dataFeedback) ? today : (found.dataFeedback??null)), revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: histArr, tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.finishedAt||null), slaStartAt: found.slaStartAt, slaStopAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.slaStopAt||null), slaPauseMs: found.slaPauseMs, pauseStartedAt: found.pauseStartedAt, slaNetMs: found.slaNetMs, slaOk: (found.slaOk??null), leadTotalMin: found.leadTotalMin, leadPorFase: found.leadPorFase }
         const tasks = []
         snap.forEach(d=> tasks.push(updateDoc(doc(db, DEM_COL, d.id), patch)))
         if (tasks.length) await Promise.all(tasks)

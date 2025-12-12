@@ -36,7 +36,12 @@ exports.updateUserPassword = functions.https.onCall(async (data, context) => {
   const newPassword = String(data?.password||'').trim()
   if (!username || !newPassword) throw new functions.https.HttpsError('invalid-argument', 'username and password required')
   const email = String(emailInput||await getEmailByUsername(username))
-  const user = await admin.auth().getUserByEmail(email)
+  let user
+  try {
+    user = await admin.auth().getUserByEmail(email)
+  } catch (e) {
+    throw new functions.https.HttpsError('not-found', 'user not found')
+  }
   await admin.auth().updateUser(user.uid, { password: newPassword })
   return { ok: true }
 })
