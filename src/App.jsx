@@ -407,6 +407,20 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
   const isoWeek = d => { const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const dayNum = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() + 4 - dayNum); const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1)); const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1)/7); return `${date.getUTCFullYear()}-W${pad(weekNo)}` }
   const thisWeek = isoWeek(new Date())
   const fmtDM = (s)=>{ if(!s) return ''; const [y,m,d]=String(s).split('-').map(Number); const dd=String(d).padStart(2,'0'); const ab=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][Math.max(0,Math.min(11,(m-1)||0))]; return `${dd}.${ab}` }
+  const [sortKey, setSortKey] = useState('created')
+  const [sortDir, setSortDir] = useState('desc')
+  const valOf = (it, k)=>{
+    if (k==='created') { const ca=it.createdAt; const t=(ca&&typeof ca==='object' && ('seconds' in ca)) ? ((ca.seconds||0)*1000 + ((ca.nanoseconds||0)/1e6)) : (ca ? Date.parse(ca) : 0); const d1=Date.parse(it.dataCriacao||'')||0; const d2=Date.parse(it.dataSolicitacao||'')||0; return t||d1||d2||0 }
+    if (k==='prazo' || k==='dataCriacao' || k==='dataSolicitacao') return Date.parse(it[k]||'')||0
+    if (k==='drive') return it.linkDrive ? 1 : 0
+    const v = it[k]
+    return typeof v==='string' ? v.toLowerCase() : (v||'')
+  }
+  const sortedItems = useMemo(()=> {
+    const arr = Array.isArray(items) ? items.slice() : []
+    return arr.sort((a,b)=>{ const va=valOf(a, sortKey), vb=valOf(b, sortKey); if (typeof va==='number' && typeof vb==='number') return sortDir==='desc' ? (vb - va) : (va - vb); const c = String(vb||'').localeCompare(String(va||'')); return sortDir==='desc' ? c : -c })
+  }, [items, sortKey, sortDir])
+  const hdr = (label, key)=> (<th onClick={()=>{ if (sortKey===key) setSortDir(d=> d==='desc'?'asc':'desc'); else { setSortKey(key); setSortDir('desc') } }}>{label} {sortKey===key ? (sortDir==='desc'?'▼':'▲') : ''}</th>)
   if (loading) {
     return (
       <div className={`table ${compact?'compact':''}`}>
@@ -420,19 +434,19 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
       <table>
         <thead>
           <tr>
-            <th>Nome</th>
-            <th>Designer</th>
-            <th>Status</th>
-            <th>Data de Solicitação</th>
-            <th>Data de Criação</th>
-            <th>Prazo</th>
-            <th>Tipo</th>
-            <th>Origem</th>
-            <th>Drive</th>
+            {hdr('Nome','titulo')}
+            {hdr('Designer','designer')}
+            {hdr('Status','status')}
+            {hdr('Data de Solicitação','dataSolicitacao')}
+            {hdr('Data de Criação','created')}
+            {hdr('Prazo','prazo')}
+            {hdr('Tipo','tipoMidia')}
+            {hdr('Origem','origem')}
+            {hdr('Drive','drive')}
           </tr>
         </thead>
         <tbody>
-          {items.map(it => (
+          {sortedItems.map(it => (
             <tr key={it.id} className="row-clickable" onClick={()=>onEdit(it)}>
               <td className="name">{it.titulo}</td>
               <td>
@@ -1117,7 +1131,8 @@ function AppInner() {
   const dashItems = useMemo(()=> demandas, [demandas])
   const dashDesigners = useMemo(()=> Array.isArray(designers) ? designers : [], [designers])
   const itemsSorted = useMemo(()=> Array.isArray(items) ? items.slice().sort((a,b)=>{
-    const da = a.dataCriacao||''; const db = b.dataCriacao||''; const c = db.localeCompare(da); if (c!==0) return c; const ia = a.id||0; const ib = b.id||0; return ib - ia
+    const ts = (x)=>{ try{ const ca=x.createdAt; const t=(ca&&typeof ca==='object' && ('seconds' in ca)) ? ((ca.seconds||0)*1000 + ((ca.nanoseconds||0)/1e6)) : (ca ? Date.parse(ca) : 0); const d1=Date.parse(x.dataCriacao||'')||0; const d2=Date.parse(x.dataSolicitacao||'')||0; const d3=Date.parse(x.prazo||'')||0; const idn=Number(x.id)||0; return t||d1||d2||d3||idn }catch{return Number(x.id)||0} }
+    const ta = ts(a), tb = ts(b); if (tb!==ta) return tb - ta; return String(b.id||'').localeCompare(String(a.id||''))
   }) : [], [items])
   const designersVisible = useMemo(()=> Array.isArray(designers) ? designers : [], [designers])
   const itemsVisible = useMemo(()=> Array.isArray(itemsSorted) ? itemsSorted : [], [itemsSorted])
@@ -1519,8 +1534,8 @@ function AppInner() {
     } else {
       const hoje = hojeISO()
       const nowIso = new Date().toISOString()
-      const inicial = { tipo:'status', autor: userLabel, data: hoje, data_hora_evento: nowIso, status_anterior: '', status_novo: 'Aberta', duracao_em_minutos: null, responsavel: userLabel, id_demanda: null, de: '', para: 'Aberta' }
-      const designerFinal = user?.username || designer
+      const designerFinal = designer || user?.username || ''
+      const inicial = { tipo:'status', autor: userLabel, data: hoje, data_hora_evento: nowIso, status_anterior: '', status_novo: 'Aberta', duracao_em_minutos: null, responsavel: designerFinal, id_demanda: null, de: '', para: 'Aberta' }
       const previsaoIA = calcPrevisaoIA(demandas, { designer: designerFinal, tipoMidia, prazo, revisoes: 0, plataforma, origem })
       const tmpId = `tmp-${Date.now()}`
       const novo = { id: tmpId, designer: designerFinal, tipoMidia, titulo, link, linkDrive, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: undefined, dataFeedback: undefined, status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null, finishedAt: null, revisoes: 0, createdBy: userLabel, previsaoIA, slaStartAt: null, slaStopAt: null, slaPauseMs: 0, pauseStartedAt: null, slaNetMs: 0, slaOk: null, leadTotalMin: 0, leadPorFase: {} }
