@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { db, isFirebaseEnabled, auth, firebaseApp } from './firebase'
 import { collection, addDoc, serverTimestamp, getDocs, deleteDoc, doc, updateDoc, setDoc, getDoc, query, where, onSnapshot } from 'firebase/firestore'
-import { getFunctions, httpsCallable } from 'firebase/functions'
+import { getFunctions, httpsCallable, httpsCallableFromURL } from 'firebase/functions'
 import { onAuthStateChanged, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
 
 const ESTADOS = ["Aberta", "Em Progresso", "Concluída"]
@@ -380,10 +380,10 @@ function aplicarFiltros(items, f) {
     if (f.plataforma && (it.plataforma||'') !== f.plataforma) return false
     if (f.origem && (it.origem||'') !== f.origem) return false
     if (f.campanha && (it.campanha||'') !== f.campanha) return false
-    if (f.cIni && it.dataCriacao && it.dataCriacao < f.cIni) return false
-    if (f.cFim && it.dataCriacao && it.dataCriacao > f.cFim) return false
-    if (f.sIni && it.dataSolicitacao < f.sIni) return false
-    if (f.sFim && it.dataSolicitacao > f.sFim) return false
+    if (f.cIni && it.prazo && it.prazo < f.cIni) return false
+    if (f.cFim && it.prazo && it.prazo > f.cFim) return false
+    if (f.sIni && it.prazo && it.prazo < f.sIni) return false
+    if (f.sFim && it.prazo && it.prazo > f.sFim) return false
     return true
   })
 }
@@ -394,7 +394,6 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
   const pad = n => String(n).padStart(2,'0')
   const isoWeek = d => { const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const dayNum = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() + 4 - dayNum); const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1)); const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1)/7); return `${date.getUTCFullYear()}-W${pad(weekNo)}` }
   const thisWeek = isoWeek(new Date())
-  const daysLeft = (p)=>{ if(!p) return ''; const [y,m,d]=String(p).split('-').map(Number); const end=new Date(y,(m||1)-1,(d||1)); const start=new Date(new Date().toLocaleString('en-US',{ timeZone:'America/Sao_Paulo' })); start.setHours(0,0,0,0); end.setHours(0,0,0,0); return Math.round((end - start)/86400000) }
   const fmtDM = (s)=>{ if(!s) return ''; const [y,m,d]=String(s).split('-').map(Number); const dd=String(d).padStart(2,'0'); const ab=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][Math.max(0,Math.min(11,(m-1)||0))]; return `${dd}.${ab}` }
   if (loading) {
     return (
@@ -414,7 +413,7 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
             <th>Status</th>
             <th>Data de Solicitação</th>
             <th>Data de Criação</th>
-            <th>Prazo (dias)</th>
+            <th>Prazo</th>
             <th>Tipo</th>
             <th>Origem</th>
             <th>Link</th>
@@ -434,7 +433,7 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
               </td>
               <td>{fmtDM(it.dataSolicitacao)}</td>
               <td>{fmtDM(it.dataCriacao)}</td>
-              <td><span style={{color: (!isDoneStatus(it.status) && Number(daysLeft(it.prazo))<=1)?'#ef4444':'inherit'}}>{daysLeft(it.prazo)}</span></td>
+              <td>{fmtDM(it.prazo)}</td>
               <td>{it.tipoMidia}</td>
               <td>{it.origem || ''}</td>
               <td>{it.link ? <a href={it.link} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}>Visualizar</a> : ''}</td>
@@ -689,7 +688,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
               {mode==='create' ? (
                 <div className="title"><span className="icon"><Icon name="plus" /></span><span>Nova demanda</span></div>
               ) : (
-                <div className="title editable" contentEditable suppressContentEditableWarning onInput={e=> setTitulo(e.currentTarget.textContent || '')}>{titulo || 'Sem título'}</div>
+                <input className="title editable" type="text" dir="ltr" placeholder="Sem título" value={titulo} onChange={e=> setTitulo(e.target.value)} />
               )}
               <button className="icon" onClick={onClose}><Icon name="close" /></button>
             </div>
@@ -714,6 +713,9 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
               {mode==='create' && (
                 <div className="form-row"><label>Titulo</label><input value={titulo} onChange={e=>setTitulo(e.target.value)} required /></div>
               )}
+              {mode==='create' && (
+                <div className="form-row"><label>Link de Referência</label><input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://" /></div>
+              )}
               <div className="form-row"><label>Origem da Demanda</label>
                 <select value={origem} onChange={e=>setOrigem(e.target.value)} required>
                   <option value="">Origem</option>
@@ -728,20 +730,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
               )}
               {mode==='create' ? (
                 <div className="row-2">
-                  <div className="form-row"><label>Arquivo</label>
-                    <input type="file" multiple accept="image/*" onChange={e=>{
-                      const max = 1024*1024
-                      const files = Array.from(e.target.files||[]).filter(f=> (f.size||0) <= max).slice(0,5)
-                      const now = new Date().toISOString()
-                      const readers = files.map(f => new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve({ name: f.name, url: r.result, addedBy: userLabel, addedAt: now }); r.readAsDataURL(f) }))
-                      Promise.all(readers).then(arr => {
-                        setArquivos(arr)
-                        setHistorico(prev=> [{ tipo:'arquivo', autor:userLabel, data: hojeISO(), arquivos: arr }, ...prev])
-                        const nomes = arr.map(a=>a.name).join(', ')
-                        setComentarios(prev=> [{ texto: `Arquivos anexados: ${nomes||arr.length}`, data: hojeISO() }, ...prev])
-                      })
-                    }} />
-                  </div>
+                  <div className="form-row"><label>Data de Solicitação</label><input type="date" value={dataSolic} onChange={e=> setDataSolic(e.target.value)} /></div>
                   <div className="form-row"><label>Prazo</label><input type="date" value={prazo} onChange={e=>setPrazo(e.target.value)} /></div>
                 </div>
               ) : (
@@ -1092,7 +1081,7 @@ function AppInner() {
   const campanhas = useMemo(()=> Array.from(new Set(demandas.map(x=>x.campanha).filter(Boolean))).sort(), [demandas])
   const role = user?.role||'comum'
   const items = useMemo(()=> aplicarFiltros(demandas, filtros), [demandas, filtros])
-  const dashItems = useMemo(()=> items, [items])
+  const dashItems = useMemo(()=> demandas, [demandas])
   const dashDesigners = useMemo(()=> Array.isArray(designers) ? designers : [], [designers])
   const itemsSorted = useMemo(()=> Array.isArray(items) ? items.slice().sort((a,b)=>{
     const da = a.dataCriacao||''; const db = b.dataCriacao||''; const c = db.localeCompare(da); if (c!==0) return c; const ia = a.id||0; const ib = b.id||0; return ib - ia
@@ -1288,7 +1277,7 @@ function AppInner() {
       const revisoes = changed && isRev ? (x.revisoes||0)+1 : (x.revisoes||0)
       const isDone = String(status||'').toLowerCase().includes('concluida') || status==='Concluída'
       const dataConclusao = isDone ? (x.dataConclusao||today) : x.dataConclusao
-      const dataCriacao = (changed && isFeedback && !x.dataCriacao) ? today : x.dataCriacao
+      const dataCriacao = (changed && ((isFeedback || isDone) && !x.dataCriacao)) ? today : x.dataCriacao
       if (changed && isDone) { finishedAt = new Date(nowMs).toISOString(); slaStopAt = finishedAt }
       const prevStatusEvent = (x.historico||[]).find(ev=> ev.tipo==='status')
       const prevTs = prevStatusEvent?.data_hora_evento ? Date.parse(prevStatusEvent.data_hora_evento) : (prevStatusEvent?.data ? Date.parse(`${prevStatusEvent.data}T00:00:00Z`) : null)
@@ -1334,7 +1323,7 @@ function AppInner() {
         const histArr = [ histItem, ...(histAlert ? [histAlert] : []), ...(histMlabs ? [histMlabs] : []), ...(found.historico||[]) ]
         const qd = query(collection(db, DEM_COL), where('id','==', String(id)))
         const snap = await getDocs(qd)
-        const patch = { ...found, status, dataCriacao: ((found.status!==status && String(status||'').toLowerCase().includes('feedback') && !found.dataCriacao) ? today : (found.dataCriacao??null)), dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : (found.dataConclusao||null), dataFeedback: (((found.status!==status && String(status||'').toLowerCase().includes('feedback')) && !found.dataFeedback) ? today : (found.dataFeedback??null)), revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: histArr, tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.finishedAt||null), slaStartAt: found.slaStartAt, slaStopAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.slaStopAt||null), slaPauseMs: found.slaPauseMs, pauseStartedAt: found.pauseStartedAt, slaNetMs: found.slaNetMs, slaOk: (found.slaOk??null), leadTotalMin: found.leadTotalMin, leadPorFase: found.leadPorFase }
+        const patch = { ...found, status, dataCriacao: ((found.status!==status && ((String(status||'').toLowerCase().includes('feedback')) || (String(status||'').toLowerCase().includes('conclu'))) && !found.dataCriacao) ? today : (found.dataCriacao??null)), dataConclusao: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? (found.dataConclusao||today) : (found.dataConclusao||null), dataFeedback: (((found.status!==status && String(status||'').toLowerCase().includes('feedback')) && !found.dataFeedback) ? today : (found.dataFeedback??null)), revisoes: (found.revisoes||0) + ((found.status!==status && String(status||'').toLowerCase().includes('revisar'))?1:0), historico: histArr, tempoProducaoMs: found.tempoProducaoMs, startedAt: found.startedAt, finishedAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.finishedAt||null), slaStartAt: found.slaStartAt, slaStopAt: (String(status||'').toLowerCase().includes('concluida') || status==='Concluída') ? new Date().toISOString() : (found.slaStopAt||null), slaPauseMs: found.slaPauseMs, pauseStartedAt: found.pauseStartedAt, slaNetMs: found.slaNetMs, slaOk: (found.slaOk??null), leadTotalMin: found.leadTotalMin, leadPorFase: found.leadPorFase }
         const tasks = []
         snap.forEach(d=> tasks.push(updateDoc(doc(db, DEM_COL, d.id), patch)))
         if (tasks.length) await Promise.all(tasks)
@@ -1636,7 +1625,7 @@ function UsersView({ users, onCreate, onDelete, onUpdate, role }) {
   const [pages, setPages] = useState({ dashboard:true, demandas:true, config:true, cadastros:true, relatorios:true, usuarios:true })
   const [actions, setActions] = useState({ criar:true, excluir:true, visualizar:true })
   const toggle = (objSetter, key) => objSetter(prev=> ({ ...prev, [key]: !prev[key] }))
-  const create = async ()=>{ const u=username.trim(); const em=(email.trim()||`${u}@betaki.bet.br`); if(!u||!password) return; const nu={ username:u, name: name||u, role: urole, cargo, pages, actions, email: em }; if (db) { try { try { await createUserWithEmailAndPassword(auth, em, password) } catch(e) { if (e?.code!=='auth/email-already-in-use') throw e } await setDoc(doc(db,'usuarios', u), nu) } catch {} } setUsername(''); setName(''); setPassword(''); setEmail(''); setUrole('comum'); setCargo('Designer'); setPages({ dashboard:true, demandas:true, config:true, cadastros:true, relatorios:true, usuarios:true }); setActions({ criar:true, excluir:true, visualizar:true }) }
+  const create = async ()=>{ const u=username.trim(); const em=(email.trim()||`${u}@betaki.bet.br`); if(!u||!password) return; const profile={ name: name||u, role: urole, cargo, pages, actions }; try { if (fns) { const call = httpsCallable(fns, 'createUser'); await call({ username: u, password, email: em, profile }); try { window.alert('Usuário criado com sucesso!') } catch {} } } catch (e) { try { if (fns) { const url = 'https://us-central1-mkt-betaki.cloudfunctions.net/createUser'; const call2 = httpsCallableFromURL(fns, url); await call2({ username: u, password, email: em, profile }); try { window.alert('Usuário criado com sucesso!') } catch {} } else { throw e } } catch (e2) { try { window.alert(String(e2?.code||e2?.message||'Falha ao criar usuário')) } catch {} } } setUsername(''); setName(''); setPassword(''); setEmail(''); setUrole('comum'); setCargo('Designer'); setPages({ dashboard:true, demandas:true, config:true, cadastros:true, relatorios:true, usuarios:true }); setActions({ criar:true, excluir:true, visualizar:true }) }
   const del = async (u)=>{
     if ((u.username||u.id)==='admin') return
     if (db) {

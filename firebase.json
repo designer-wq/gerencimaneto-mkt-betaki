@@ -6,7 +6,8 @@
     "source": "functions"
   },
   "hosting": {
-    "public": "dist",
+    "site": "mkt-betaki",
+    "public": "docs",
     "ignore": [
       "firebase.json",
       "**/.*",
