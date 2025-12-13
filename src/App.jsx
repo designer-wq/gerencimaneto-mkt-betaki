@@ -608,7 +608,7 @@ function CalendarView({ items, refDate }) {
   )
 }
 
-function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, cadPlataformas, onDelete, userLabel, canDelete, onAddComment, cadOrigens, currentUser, usersAll, canEdit, displayUser }) {
+function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, cadPlataformas, onDelete, userLabel, canDelete, onAddComment, cadOrigens, currentUser, usersAll, canEdit, displayUser, onStatus }) {
   const [designer, setDesigner] = useState(initial?.designer || currentUser || '')
   const [tipoMidia, setTipoMidia] = useState(initial?.tipoMidia || 'Post')
   const [titulo, setTitulo] = useState(initial?.titulo || '')
@@ -695,6 +695,11 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
         
         <div className={`status-bar ${statusClass(initial?.status || 'Aberta')}`}>
           <div>{initial?.status || 'Aberta'}</div>
+          {mode!=='create' && (
+            <select value={initial?.status||'Aberta'} onChange={e=>{ try{ onStatus && onStatus(initial?.id, e.target.value) }catch{} }} disabled={!canEdit} style={{marginLeft:8}}>
+              {FIXED_STATUS.map(s=> <option key={s} value={s}>{statusWithDot(s)}</option>)}
+            </select>
+          )}
           {mode!=='create' && (<div className="timer"><span className="icon"><Icon name="clock" /></span><span>{fmtHMS(totalMs)}</span></div>)}
         </div>
         <form id="modalForm" className="modal-body" onSubmit={submit}>
@@ -726,7 +731,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
                 <input value={campanha} onChange={e=>setCampanha(e.target.value)} placeholder="Ex: Black Friday" />
               </div>
               {mode!=='create' && (
-                <div className="form-row"><label>Link</label><input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://" /></div>
+                <div className="form-row"><label>Link de Referência</label><input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://" />{link ? (<div style={{marginTop:6}}><a href={link} target="_blank" rel="noreferrer">Abrir link</a></div>) : null}</div>
               )}
               {mode==='create' ? (
                 <div className="row-2">
@@ -1209,6 +1214,13 @@ function AppInner() {
       setRoute('dashboard')
     }
   },[user, allowedRoutes, route])
+  useEffect(()=>{
+    if (!modalOpen || !editing) return
+    const found = demandas.find(x=> String(x.id)===String(editing.id))
+    if (found) {
+      try { setEditing(found) } catch {}
+    }
+  }, [demandas, modalOpen, editing])
 
   const logout = async ()=>{ try { await signOut(auth) } catch {} setUser(null) }
   const login = async (username, password) => {
@@ -1463,8 +1475,7 @@ function AppInner() {
       if (db) { try { const qd=query(collection(db, DEM_COL), where('id','==', String(editing.id))); const snap=await getDocs(qd); const tasks=[]; snap.forEach(d=> tasks.push(updateDoc(doc(db, DEM_COL, d.id), updated))); if (tasks.length) await Promise.all(tasks) } catch {} }
       await ensureCad()
       try { await pushAlert(editing.id, 'Demanda salva') } catch {}
-      setModalOpen(false)
-      setRoute('demandas')
+      try { window.alert('Demanda salva com sucesso!') } catch {}
     } else {
       const hoje = hojeISO()
       const nowIso = new Date().toISOString()
@@ -1527,10 +1538,10 @@ function AppInner() {
           )}
           {user && route==='demandas' && allowedRoutes.includes('demandas') && (
             <div className="demandas-layout">
-              <div className="sidebar-col">
-                <FilterBar filtros={filtros} setFiltros={setFiltros} designers={designersVisible} showSearch={false} statusCounts={statusCounts} />
-              </div>
           <div className="content-col">
+          <div className="top-filters">
+            <FilterBar filtros={filtros} setFiltros={setFiltros} designers={designersVisible} showSearch={false} statusCounts={statusCounts} />
+          </div>
           <div className="top-search">
             <input className="search" placeholder="Pesquisar demandas..." value={filtros.q||''} onChange={e=> setFiltros(prev=> ({ ...prev, q: e.target.value }))} />
             <button className="primary" onClick={onNew} disabled={!canCreate}><span className="icon"><Icon name="plus" /></span><span>Nova demanda</span></button>
@@ -1551,7 +1562,7 @@ function AppInner() {
             {view==='calendar' && (
             <CalendarView items={itemsVisible} refDate={calRef} />
             )}
-            <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} designers={designersVisible} cadPlataformas={cadPlataformas} onDelete={onDelete} userLabel={userLabel} canDelete={canDelete} onAddComment={onAddComment} cadOrigens={cadOrigens} currentUser={user?.username||''} usersAll={usersAll} canEdit={(user?.role==='admin')} displayUser={displayUser} />
+            <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} designers={designersVisible} cadPlataformas={cadPlataformas} onDelete={onDelete} userLabel={userLabel} canDelete={canDelete} onAddComment={onAddComment} cadOrigens={cadOrigens} currentUser={user?.username||''} usersAll={usersAll} canEdit={(user?.role==='admin')} displayUser={displayUser} onStatus={onStatus} />
             <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designersVisible} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} cadTipos={cadTipos} origens={cadOrigens} campanhas={campanhas} />
           </div>
             </div>
@@ -1864,13 +1875,14 @@ function FilterBar({ filtros, setFiltros, designers, showSearch, statusCounts })
     const endOfLastMonth = new Date(d.getFullYear(), d.getMonth(), 0)
     if (period==='today') setFiltros(prev=>({ ...prev, sIni: toYMD(d), sFim: toYMD(d), cIni:'', cFim:'' }))
     if (period==='week') { const s=startOfISOWeek(d), e=endOfISOWeek(d); setFiltros(prev=>({ ...prev, sIni: toYMD(s), sFim: toYMD(e), cIni:'', cFim:'' })) }
+    if (period==='nextweek') { const s=startOfISOWeek(d); s.setDate(s.getDate()+7); const e=endOfISOWeek(s); setFiltros(prev=>({ ...prev, sIni: toYMD(s), sFim: toYMD(e), cIni:'', cFim:'' })) }
     if (period==='month') setFiltros(prev=>({ ...prev, sIni: toYMD(startOfMonth), sFim: toYMD(endOfMonth), cIni:'', cFim:'' }))
     if (period==='lastmonth') setFiltros(prev=>({ ...prev, sIni: toYMD(startOfLastMonth), sFim: toYMD(endOfLastMonth), cIni:'', cFim:'' }))
     if (period==='last30') { const s = new Date(d); s.setDate(s.getDate()-29); setFiltros(prev=>({ ...prev, sIni: toYMD(s), sFim: toYMD(d), cIni:'', cFim:'' })) }
   },[period])
   const setDesigner = (v) => setFiltros(prev=> ({ ...prev, designer: v==='Todos'?'':v }))
-  const list = ['Hoje','Semana','Mês','Mês passado','Últimos 30 dias']
-  const keyOf = s => s==='Hoje'?'today': s==='Semana'?'week': s==='Mês'?'month': s==='Mês passado'?'lastmonth':'last30'
+  const list = ['Hoje','Semana','Próxima semana','Mês','Mês passado','Últimos 30 dias']
+  const keyOf = s => s==='Hoje'?'today': s==='Semana'?'week': s==='Próxima semana'?'nextweek': s==='Mês'?'month': s==='Mês passado'?'lastmonth':'last30'
   const designersKeys = ['Todos', ...designers]
   const colorOf = (s) => {
     if (s==='Pendente') return 'gray'
