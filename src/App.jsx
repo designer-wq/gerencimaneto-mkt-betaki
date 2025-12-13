@@ -416,7 +416,7 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
             <th>Prazo</th>
             <th>Tipo</th>
             <th>Origem</th>
-            <th>Link</th>
+            <th>Drive</th>
           </tr>
         </thead>
         <tbody>
@@ -436,7 +436,7 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
               <td>{fmtDM(it.prazo)}</td>
               <td>{it.tipoMidia}</td>
               <td>{it.origem || ''}</td>
-              <td>{it.link ? <a href={it.link} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}>Visualizar</a> : ''}</td>
+              <td>{it.linkDrive ? <a href={it.linkDrive} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}>Abrir Drive</a> : ''}</td>
               <td>
                 {Array.isArray(it.arquivos) && it.arquivos.length ? (
                   <div className="files">
@@ -613,6 +613,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
   const [tipoMidia, setTipoMidia] = useState(initial?.tipoMidia || 'Post')
   const [titulo, setTitulo] = useState(initial?.titulo || '')
   const [link, setLink] = useState(initial?.link || '')
+  const [linkDrive, setLinkDrive] = useState(initial?.linkDrive || '')
   const [arquivoNome, setArquivoNome] = useState('')
   const [dataSolic, setDataSolic] = useState(initial?.dataSolicitacao || hojeISO())
   const [plataforma, setPlataforma] = useState(initial?.plataforma || '')
@@ -637,6 +638,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
     setTipoMidia(initial?.tipoMidia || 'Post')
     setTitulo(initial?.titulo || '')
     setLink(initial?.link || '')
+    setLinkDrive(initial?.linkDrive || '')
     setArquivoNome('')
     setDataSolic(initial?.dataSolicitacao ?? (mode==='create' ? hojeISO() : ''))
     setPlataforma(initial?.plataforma || (cadPlataformas?.[0] || ''))
@@ -659,7 +661,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
     else if (name==='Banner Ads') { setTipoMidia('Banner'); setPlataforma('Tráfego Pago'); setPrazo(addDaysISO(hojeISO(),3)); setTitulo(t=> t||'Banner Ads') }
     else if (name==='Vídeo Motion') { setTipoMidia('Vídeo'); setPlataforma('YouTube'); setPrazo(addDaysISO(hojeISO(),5)); setTitulo(t=> t||'Vídeo Motion') }
   }
-  const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, dataFeedback, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) }
+  const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, linkDrive, arquivoNome, dataSolic, dataCriacao, dataFeedback, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) }
   const addComentario = () => { const v = novoComentario.trim(); if (!v) return; const men = extractMentions(v); const c = { texto: v, data: hojeISO(), mentions: men, autor: userLabel }; const h = { tipo:'comentario', autor:userLabel, data: c.data, texto: v, mentions: men }; setComentarios(prev=> [c, ...prev]); setHistorico(prev=> [h, ...prev]); setNovoComentario(''); try { onAddComment && onAddComment(initial?.id, c, h) } catch {}
   }
   const fmtDT = (s)=>{ if(!s) return ''; try{ return new Date(s).toLocaleString('pt-BR',{ timeZone:'America/Sao_Paulo', day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) }catch{return s} }
@@ -732,6 +734,9 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
               </div>
               {mode!=='create' && (
                 <div className="form-row"><label>Link de Referência</label><input type="url" value={link} onChange={e=>setLink(e.target.value)} placeholder="https://" />{link ? (<div style={{marginTop:6}}><a href={link} target="_blank" rel="noreferrer">Abrir link</a></div>) : null}</div>
+              )}
+              {mode!=='create' && (
+                <div className="form-row"><label>Link do Drive</label><input type="url" value={linkDrive} onChange={e=>setLinkDrive(e.target.value)} placeholder="https://" />{linkDrive ? (<div style={{marginTop:6}}><a href={linkDrive} target="_blank" rel="noreferrer">Abrir Drive</a></div>) : null}</div>
               )}
               {mode==='create' ? (
                 <div className="row-2">
@@ -1469,7 +1474,7 @@ function AppInner() {
       try { if (historico && Array.isArray(historico)) { const last = historico[0]; const st = last?.para || last?.de || 'Aberta'; await up('cad_status', st) } } catch {}
     }
     if (modalMode==='edit' && editing) {
-      const updated = { ...editing, designer, tipoMidia, titulo, link, descricao, comentarios: comentarios ?? editing.comentarios, historico: historico ?? editing.historico, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, dataFeedback: dataFeedback || editing.dataFeedback, plataforma, prazo, origem, campanha }
+      const updated = { ...editing, designer, tipoMidia, titulo, link, linkDrive, descricao, comentarios: comentarios ?? editing.comentarios, historico: historico ?? editing.historico, arquivos: (arquivos && arquivos.length ? arquivos : editing.arquivos), arquivoNome: arquivoNome || editing.arquivoNome, dataSolicitacao: dataSolic || editing.dataSolicitacao, dataCriacao: dataCriacao || editing.dataCriacao, dataFeedback: dataFeedback || editing.dataFeedback, plataforma, prazo, origem, campanha }
       const updatedView = { ...updated, fxSavedAt: Date.now() }
       setDemandas(prev=> prev.map(x=> x.id===editing.id ? updatedView : x))
       if (db) { try { const qd=query(collection(db, DEM_COL), where('id','==', String(editing.id))); const snap=await getDocs(qd); const tasks=[]; snap.forEach(d=> tasks.push(updateDoc(doc(db, DEM_COL, d.id), updated))); if (tasks.length) await Promise.all(tasks) } catch {} }
@@ -1483,7 +1488,7 @@ function AppInner() {
       const designerFinal = user?.username || designer
       const previsaoIA = calcPrevisaoIA(demandas, { designer: designerFinal, tipoMidia, prazo, revisoes: 0, plataforma, origem })
       const tmpId = `tmp-${Date.now()}`
-      const novo = { id: tmpId, designer: designerFinal, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: undefined, dataFeedback: undefined, status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null, finishedAt: null, revisoes: 0, createdBy: userLabel, previsaoIA, slaStartAt: null, slaStopAt: null, slaPauseMs: 0, pauseStartedAt: null, slaNetMs: 0, slaOk: null, leadTotalMin: 0, leadPorFase: {} }
+      const novo = { id: tmpId, designer: designerFinal, tipoMidia, titulo, link, linkDrive, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: undefined, dataFeedback: undefined, status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null, finishedAt: null, revisoes: 0, createdBy: userLabel, previsaoIA, slaStartAt: null, slaStopAt: null, slaPauseMs: 0, pauseStartedAt: null, slaNetMs: 0, slaOk: null, leadTotalMin: 0, leadPorFase: {} }
       setDemandas(prev=> [novo, ...prev])
       if (db) {
         try {
