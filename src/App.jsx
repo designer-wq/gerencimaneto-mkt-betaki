@@ -384,10 +384,22 @@ function FilterModal({ open, filtros, setFiltros, designers, onClose, cadStatus,
 }
 
 function aplicarFiltros(items, f) {
+  const low = s=> String(s||'').toLowerCase()
+  const matchesStatus = (itemStatus, filterStatus)=>{
+    if (!filterStatus) return true
+    const fs = String(filterStatus)
+    if (fs==='Pendente') return isPendingStatus(itemStatus)
+    if (fs==='Em produção') return isProdStatus(itemStatus)
+    if (fs==='Aguardando Feedback') return low(itemStatus).includes('feedback')
+    if (fs==='Revisar') return low(itemStatus).includes('revisar')
+    if (fs==='Aprovada') return low(itemStatus).includes('aprov')
+    if (fs==='Concluida' || fs==='Concluída') return low(itemStatus).includes('conclu') || itemStatus==='Concluída'
+    return String(itemStatus)===fs
+  }
   return items.filter(it => {
     if (f.q && !(it.titulo||'').toLowerCase().includes(f.q.toLowerCase())) return false
     if (f.designer && it.designer !== f.designer) return false
-    if (f.status && it.status !== f.status) return false
+    if (f.status && !matchesStatus(it.status, f.status)) return false
     if (f.tipoMidia && it.tipoMidia !== f.tipoMidia) return false
     if (f.plataforma && (it.plataforma||'') !== f.plataforma) return false
     if (f.origem && (it.origem||'') !== f.origem) return false
@@ -400,7 +412,7 @@ function aplicarFiltros(items, f) {
   })
 }
 
-function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, hasMore, showMore, canCollapse, showLess, shown, total, compact, canEdit, loading }) {
+function TableView({ items, onEdit, onStatus, cadStatus, cadTipos, cadOrigens, designers, onBulkUpdate, onDelete, onDuplicate, hasMore, showMore, canCollapse, showLess, shown, total, compact, canEdit, canChangeStatus, loading }) {
   const [menuOpen, setMenuOpen] = useState(null)
   const toggleMenu = (id) => setMenuOpen(prev => prev===id ? null : id)
   const pad = n => String(n).padStart(2,'0')
@@ -409,6 +421,9 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
   const fmtDM = (s)=>{ if(!s) return ''; const [y,m,d]=String(s).split('-').map(Number); const dd=String(d).padStart(2,'0'); const ab=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][Math.max(0,Math.min(11,(m-1)||0))]; return `${dd}.${ab}` }
   const [sortKey, setSortKey] = useState('created')
   const [sortDir, setSortDir] = useState('desc')
+  const [selected, setSelected] = useState(()=> new Set())
+  const [bulk, setBulk] = useState({ status:'', tipoMidia:'', origem:'', designer:'', dataCriacao:'' })
+  const [saving, setSaving] = useState(false)
   const valOf = (it, k)=>{
     if (k==='created') { const ca=it.createdAt; const t=(ca&&typeof ca==='object' && ('seconds' in ca)) ? ((ca.seconds||0)*1000 + ((ca.nanoseconds||0)/1e6)) : (ca ? Date.parse(ca) : 0); const d1=Date.parse(it.dataCriacao||'')||0; const d2=Date.parse(it.dataSolicitacao||'')||0; return t||d1||d2||0 }
     if (k==='prazo' || k==='dataCriacao' || k==='dataSolicitacao') return Date.parse(it[k]||'')||0
@@ -421,6 +436,21 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
     return arr.sort((a,b)=>{ const va=valOf(a, sortKey), vb=valOf(b, sortKey); if (typeof va==='number' && typeof vb==='number') return sortDir==='desc' ? (vb - va) : (va - vb); const c = String(vb||'').localeCompare(String(va||'')); return sortDir==='desc' ? c : -c })
   }, [items, sortKey, sortDir])
   const hdr = (label, key)=> (<th onClick={()=>{ if (sortKey===key) setSortDir(d=> d==='desc'?'asc':'desc'); else { setSortKey(key); setSortDir('desc') } }}>{label} {sortKey===key ? (sortDir==='desc'?'▼':'▲') : ''}</th>)
+  const isAllSelected = sortedItems.length>0 && sortedItems.every(it=> selected.has(String(it.id)))
+  const toggleAll = ()=> setSelected(prev=>{ const n=new Set(prev); if (isAllSelected) { sortedItems.forEach(it=> n.delete(String(it.id))) } else { sortedItems.forEach(it=> n.add(String(it.id))) } return n })
+  const toggleRow = (id)=> setSelected(prev=>{ const n=new Set(prev); const k=String(id); if (n.has(k)) n.delete(k); else n.add(k); return n })
+  const clearSel = ()=> setSelected(new Set())
+  const doBulkSave = async ()=>{
+    if (saving) return
+    setSaving(true)
+    const ids = Array.from(selected)
+    const patch = {}; Object.entries(bulk).forEach(([k,v])=>{ if (v) patch[k]=v })
+    if (ids.length && Object.keys(patch).length && onBulkUpdate) {
+      await onBulkUpdate(ids, patch)
+      clearSel(); setBulk({ status:'', tipoMidia:'', origem:'', designer:'', dataCriacao:'' })
+    }
+    setSaving(false)
+  }
   if (loading) {
     return (
       <div className={`table ${compact?'compact':''}`}>
@@ -430,10 +460,35 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
     )
   }
   return (
-    <div className={`table ${compact?'compact':''}`}>
+    <div className={`table ${compact?'compact':''}`} style={selected.size>0 ? { paddingBottom: 80 } : undefined}>
+      {selected.size>0 && (
+        <div className="bulk-bar" style={{position:'fixed',left:0,right:0,bottom:0,display:'flex',gap:12,alignItems:'center',padding:'10px 16px',background:'#fff',boxShadow:'0 -8px 24px rgba(0,0,0,0.12)',borderTop:'1px solid #e5e7eb',zIndex:999}}>
+          <span style={{color:'var(--muted)'}}>Selecionadas: {selected.size}</span>
+          <select value={bulk.status} onChange={e=> setBulk(prev=> ({ ...prev, status: e.target.value }))}>
+            <option value="">Status</option>
+            {FIXED_STATUS.map(s=> <option key={s} value={s}>{s}</option>)}
+          </select>
+          <select value={bulk.tipoMidia} onChange={e=> setBulk(prev=> ({ ...prev, tipoMidia: e.target.value }))}>
+            <option value="">Tipo</option>
+            {(cadTipos||[]).map(t=> <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select value={bulk.origem} onChange={e=> setBulk(prev=> ({ ...prev, origem: e.target.value }))}>
+            <option value="">Origem</option>
+            {(cadOrigens||[]).map(o=> <option key={o} value={o}>{o}</option>)}
+          </select>
+          <select value={bulk.designer} onChange={e=> setBulk(prev=> ({ ...prev, designer: e.target.value }))}>
+            <option value="">Designer</option>
+            {(designers||[]).map(d=> <option key={d} value={d}>{d}</option>)}
+          </select>
+          <input type="date" value={bulk.dataCriacao||''} onChange={e=> setBulk(prev=> ({ ...prev, dataCriacao: e.target.value }))} />
+          <button className="primary" type="button" onClick={doBulkSave} disabled={!canEdit || saving}>Salvar</button>
+          <button className="tertiary" type="button" onClick={clearSel}>Limpar seleção</button>
+        </div>
+      )}
       <table>
         <thead>
           <tr>
+            <th><input type="checkbox" checked={isAllSelected} onChange={toggleAll} /></th>
             {hdr('Nome','titulo')}
             {hdr('Designer','designer')}
             {hdr('Status','status')}
@@ -448,12 +503,13 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
         <tbody>
           {sortedItems.map(it => (
             <tr key={it.id} className="row-clickable" onClick={()=>onEdit(it)}>
+              <td><input type="checkbox" checked={selected.has(String(it.id))} onClick={e=> e.stopPropagation()} onChange={()=> toggleRow(it.id)} /></td>
               <td className="name">{it.titulo}</td>
               <td>
                 <div>{it.designer}</div>
               </td>
               <td>
-                <select className={`status-select ${statusClass(it.status)}`} value={it.status} onChange={e=>onStatus(it.id, e.target.value)} onClick={e=>e.stopPropagation()} disabled={!canEdit}>
+                <select className={`status-select ${statusClass(it.status)}`} value={it.status} onChange={e=>onStatus(it.id, e.target.value)} onClick={e=>e.stopPropagation()} disabled={!canChangeStatus}>
                   {FIXED_STATUS.map(s=> <option key={s} value={s}>{statusWithDot(s)}</option>)}
                 </select>
               </td>
@@ -634,7 +690,7 @@ function CalendarView({ items, refDate }) {
   )
 }
 
-function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, cadPlataformas, onDelete, userLabel, canDelete, onAddComment, cadOrigens, currentUser, usersAll, canEdit, displayUser, onStatus }) {
+function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, cadPlataformas, onDelete, userLabel, canDelete, onAddComment, cadOrigens, currentUser, usersAll, canEdit, canChangeStatus, displayUser, onStatus }) {
   const [designer, setDesigner] = useState(initial?.designer || currentUser || '')
   const [tipoMidia, setTipoMidia] = useState(initial?.tipoMidia || 'Post')
   const [titulo, setTitulo] = useState(initial?.titulo || '')
@@ -735,7 +791,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
         <div className={`status-bar ${statusClass(initial?.status || 'Aberta')}`}>
           <div>{initial?.status || 'Aberta'}</div>
           {mode!=='create' && (
-            <select value={initial?.status||'Aberta'} onChange={e=>{ try{ onStatus && onStatus(initial?.id, e.target.value) }catch{} }} disabled={!canEdit} style={{marginLeft:8}}>
+            <select value={initial?.status||'Aberta'} onChange={e=>{ try{ onStatus && onStatus(initial?.id, e.target.value) }catch{} }} disabled={!canChangeStatus} style={{marginLeft:8}}>
               {FIXED_STATUS.map(s=> <option key={s} value={s}>{statusWithDot(s)}</option>)}
             </select>
           )}
@@ -1101,6 +1157,7 @@ function AlertBar({ revisarCount, aprovadaCount, onShowRevisar, onShowAprovada }
 function AppInner() {
   const [user, setUser] = useState(null)
   const [demandas, setDemandas] = useState([])
+  const pendingRef = useRef({})
   const [demCols, setDemCols] = useState({})
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState('table')
@@ -1253,7 +1310,7 @@ function AppInner() {
   },[themeVars])
   useEffect(()=>{
     if (!db || !user) return
-    const u1 = onSnapshot(collection(db, DEM_COL), s=>{ const arr=[]; s.forEach(d=> arr.push({ id: d.data().id || d.id, ...d.data() })); setDemandas(arr); setLoading(false) })
+    const u1 = onSnapshot(collection(db, DEM_COL), s=>{ const arr=[]; s.forEach(d=> arr.push({ id: d.data().id || d.id, ...d.data() })); const merged = arr.map(x=> ({ ...x, ...(pendingRef.current[String(x.id)]||{}) })); setDemandas(merged); setLoading(false) })
     const u2 = onSnapshot(collection(db,'usuarios'), s=>{ const arr=[]; s.forEach(d=> arr.push({ id:d.id, ...d.data() })); setUsersAll(arr) })
     const u3 = onSnapshot(collection(db,'cad_status'), s=> setCadStatus(s.docs.map(d=> d.data().name || d.id)))
     const u4 = onSnapshot(collection(db,'cad_tipos'), s=> setCadTipos(s.docs.filter(d=> (d.data().active!==false)).map(d=> d.data().name || d.id)))
@@ -1292,9 +1349,10 @@ function AppInner() {
   }
 
   const isAdmin = (user?.role==='admin')
-  const canCreate = isAdmin || (user?.actions?.criar !== false)
-  const canDelete = isAdmin || (user?.actions?.excluir !== false)
-  const canView = isAdmin || (user?.actions?.visualizar !== false)
+  const isDesigner = (user?.cargo==='Designer')
+  const canCreate = isAdmin || isDesigner || (user?.actions?.criar !== false)
+  const canDelete = isAdmin || isDesigner || (user?.actions?.excluir !== false)
+  const canView = isAdmin || isDesigner || (user?.actions?.visualizar !== false)
   const onNew = ()=>{ if (!user || !canCreate) return; setModalMode('create'); setEditing(null); setModalOpen(true) }
   const onEdit = it => { if (!user || !canView) return; setModalMode('edit'); setEditing(it); setModalOpen(true) }
   const onDuplicate = async (it) => {
@@ -1306,6 +1364,7 @@ function AppInner() {
   const onStatus = async (id, status) => {
     const today = hojeISO()
     let nextItem = null
+    pendingRef.current[String(id)] = { ...(pendingRef.current[String(id)]||{}), status }
     setDemandas(prev=> prev.map(x=> {
       if (String(x.id)!==String(id)) return x
       const changed = x.status !== status
@@ -1417,6 +1476,7 @@ function AppInner() {
         const tasks = []
         snap.forEach(d=> tasks.push(updateDoc(doc(db, DEM_COL, d.id), { comentarios: [c, ...(found.comentarios||[])], historico: histArr })))
         if (tasks.length) await Promise.all(tasks)
+        try { const cur=pendingRef.current[String(id)]||{}; delete cur.status; pendingRef.current[String(id)] = cur } catch {}
       } catch {}
     }
   }
@@ -1439,6 +1499,44 @@ function AppInner() {
         if (tasks.length) await Promise.all(tasks)
       } catch {}
     }
+  }
+  const onBulkUpdate = async (ids, patch) => {
+    try {
+      const isAdmin = (user?.role==='admin')
+      const isDesigner = (user?.cargo==='Designer')
+      if (!isAdmin && !isDesigner) return
+      const arrIds = Array.isArray(ids) ? ids.map(String) : []
+      const p = patch || {}
+      const today = hojeISO()
+      for (const id of arrIds) {
+        if (p.status) {
+          pendingRef.current[String(id)] = { ...(pendingRef.current[String(id)]||{}), status: p.status }
+          try { await onStatus(id, p.status) } catch {}
+        }
+        for (const k of ['tipoMidia','origem','designer','dataCriacao']) {
+          if (p[k]) {
+            try {
+              pendingRef.current[String(id)] = { ...(pendingRef.current[String(id)]||{}), [k]: p[k] }
+              setDemandas(prev=> prev.map(x=> {
+                if (String(x.id)!==String(id)) return x
+                const histItem = { tipo:'grupo', autor: userLabel, data: today, campo: k, valor: p[k], id_demanda: x.id }
+                return { ...x, [k]: p[k], historico: [histItem, ...(x.historico||[])] }
+              }))
+              if (db) {
+                const found = demandas.find(x=> String(x.id)===String(id))
+                const histItem = { tipo:'grupo', autor: userLabel, data: today, campo: k, valor: p[k], id_demanda: id }
+                const qd = query(collection(db, DEM_COL), where('id','==', String(id)))
+                const snap = await getDocs(qd)
+                const tasks = []
+                snap.forEach(d=> tasks.push(updateDoc(doc(db, DEM_COL, d.id), { [k]: p[k], historico: [histItem, ...((found?.historico)||[])] })))
+                if (tasks.length) await Promise.all(tasks)
+                try { const cur=pendingRef.current[String(id)]||{}; delete cur[k]; pendingRef.current[String(id)] = cur } catch {}
+              }
+            } catch {}
+          }
+        }
+      }
+    } catch {}
   }
   const onDelete = async (id) => {
     setDemandas(prev=> prev.map(x=> x.id===id ? ({ ...x, fxDeleting:true }) : x))
@@ -1615,13 +1713,13 @@ function AppInner() {
           )}
           {view==='table' && (
               <div className="table-scroll">
-                <TableView items={itemsVisible.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsVisible.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsVisible.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsVisible.length)} total={itemsVisible.length} compact={compact} canEdit={!!user} loading={loading} />
+                <TableView items={itemsVisible.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} cadTipos={cadTipos} cadOrigens={cadOrigens} designers={designersVisible} onBulkUpdate={onBulkUpdate} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsVisible.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsVisible.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsVisible.length)} total={itemsVisible.length} compact={compact} canEdit={((user?.role==='admin') || (user?.cargo==='Designer'))} canChangeStatus={!!user} loading={loading} />
               </div>
             )}
             {view==='calendar' && (
             <CalendarView items={itemsVisible} refDate={calRef} />
             )}
-            <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} designers={designersVisible} cadPlataformas={cadPlataformas} onDelete={onDelete} userLabel={userLabel} canDelete={canDelete} onAddComment={onAddComment} cadOrigens={cadOrigens} currentUser={user?.username||''} usersAll={usersAll} canEdit={(user?.role==='admin')} displayUser={displayUser} onStatus={onStatus} />
+            <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} designers={designersVisible} cadPlataformas={cadPlataformas} onDelete={onDelete} userLabel={userLabel} canDelete={canDelete} onAddComment={onAddComment} cadOrigens={cadOrigens} currentUser={user?.username||''} usersAll={usersAll} canEdit={((user?.role==='admin') || (user?.cargo==='Designer'))} canChangeStatus={!!user} displayUser={displayUser} onStatus={onStatus} />
             <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designersVisible} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} cadTipos={cadTipos} origens={cadOrigens} campanhas={campanhas} />
           </div>
             </div>
@@ -1989,6 +2087,14 @@ function FilterBar({ filtros, setFiltros, designers, showSearch, statusCounts })
           ))}
         </div>
         <div className="seg">
+          <div className="filter-title">Status</div>
+            {FIXED_STATUS.map(s=> (
+              <button key={s} className={`btn-md ${colorOf(s)} ${((filtros.status||'')===s)?'active':''}`} onClick={()=> setFiltros(prev=> ({ ...prev, status: prev.status===s ? undefined : s }))}>
+                <span className="emoji">{emojiOf(s)}</span><span>{s}</span>{(statusCounts?.[s]>0) ? (<span className="alert-count">{statusCounts[s]}</span>) : null}
+              </button>
+            ))}
+        </div>
+        <div className="seg">
           <div className="filter-title">Designer</div>
           {designersKeys.map(d=> (
             <button key={d} className={`btn-md ${((filtros.designer||'')===d || (d==='Todos' && !filtros.designer))?'active':''}`} onClick={()=> setDesigner(d)}>
@@ -2000,19 +2106,6 @@ function FilterBar({ filtros, setFiltros, designers, showSearch, statusCounts })
           <button className="tertiary" type="button" onClick={()=> setAdvOpen(v=> !v)}>{advOpen? 'Ocultar Filtros Avançados' : 'Filtros Avançados'}</button>
         </div>
       </div>
-      {advOpen && (
-        <div className="filters-row">
-          <div className="seg">
-            <div className="filter-title">Status</div>
-              {FIXED_STATUS.map(s=> (
-                <button key={s} className={`btn-md ${colorOf(s)} ${((filtros.status||'')===s)?'active':''}`} onClick={()=> setFiltros(prev=> ({ ...prev, status: prev.status===s ? undefined : s }))}>
-                  <span className="emoji">{emojiOf(s)}</span><span>{s}</span>{(statusCounts?.[s]>0) ? (<span className="alert-count">{statusCounts[s]}</span>) : null}
-                </button>
-              ))}
-          </div>
-          
-        </div>
-      )}
     </div>
   )
 }
@@ -2020,11 +2113,16 @@ function FilterBar({ filtros, setFiltros, designers, showSearch, statusCounts })
 function DashboardView({ demandas, items: itemsParam, designers, setView, onEdit, onStatus, cadStatus, onDelete, onDuplicate, compact, calRef, setCalRef, loading, setRoute, setFiltros, user }) {
   const isAdmin = (user?.role==='admin')
   const username = user?.username||''
-  const items = !isAdmin ? (itemsParam||[]).filter(x=> (x.designer||'')===username) : (itemsParam||[])
+  const items = !isAdmin ? (itemsParam||[]).filter(x=> {
+    const d = String(x.designer||'').toLowerCase()
+    const un = String(username||'').toLowerCase()
+    const nm = String(user?.name||'').toLowerCase()
+    return d===un || d===nm
+  }) : (itemsParam||[])
   const total = items.length
   const concluidos = items.filter(x=> isDoneStatus(x.status))
   const produTotal = concluidos.length
-  const backlog = items.filter(x=> !isDoneStatus(x.status)).length
+  const backlog = items.filter(x=> isProdStatus(x.status)).length
   const revisoesTot = items.reduce((acc,x)=> acc + (x.revisoes||0), 0)
   const retrabalhoPct = Math.round(100 * (items.filter(x=> (x.revisoes||0)>0).length / Math.max(1,total)))
   const slaGeralPct = (()=>{ const ok = concluidos.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot = concluidos.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })()
@@ -2175,7 +2273,7 @@ function DashboardView({ demandas, items: itemsParam, designers, setView, onEdit
             </div>
             <div className="kpi-card" style={{padding:20,border:'1px solid var(--border)',borderRadius:12}}>
               <div className="kpi-subtext" style={{color:'var(--muted)',marginBottom:6}}>Demandas em andamento</div>
-              <div className="kpi-number" style={{fontSize:32,fontWeight:800}}><CountUp value={items.filter(x=> !isDoneStatus(x.status)).length} /></div>
+              <div className="kpi-number" style={{fontSize:32,fontWeight:800}}><CountUp value={items.filter(x=> isProdStatus(x.status)).length} /></div>
             </div>
             <div className="kpi-card" style={{padding:20,border:'1px solid var(--border)',borderRadius:12}}>
               <div className="kpi-subtext" style={{color:'var(--muted)',marginBottom:6}}>SLA pessoal</div>
@@ -2620,7 +2718,7 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros, loading,
         <div className="report-card" style={{padding:24,borderRadius:8,boxShadow:'0 6px 16px rgba(0,0,0,0.12)'}}>
           <div className="report-title">Relatório de Backlog</div>
           <div className="section-divider" />
-          {(()=>{ const emAndamento = backlogItems.filter(x=> { const v=String(x.status||'').toLowerCase(); return isProdStatus(x.status) || v.includes('feedback') }).length; const emRevisao = backlogItems.filter(x=> String(x.status||'').toLowerCase().includes('revis')).length; const slaEstourado = backlogItems.filter(x=> { const dl=diasRestantes(x.prazo); return dl!=null && dl<0 }).length; return (
+          {(()=>{ const emAndamento = backlogItems.filter(x=> isProdStatus(x.status)).length; const emRevisao = backlogItems.filter(x=> String(x.status||'').toLowerCase().includes('revis')).length; const slaEstourado = backlogItems.filter(x=> { const dl=diasRestantes(x.prazo); return dl!=null && dl<0 }).length; return (
             <div className="kpi-grid" style={{display:'grid',gridTemplateColumns:'repeat(3, minmax(160px, 1fr))',gap:16}}>
               <div className="kpi-card" style={{padding:24,border:'1px solid var(--border)',borderRadius:12,height:160,overflow:'hidden',whiteSpace:'nowrap'}}>
                 <div className="kpi-number" style={{fontSize:28,fontWeight:700}}>{emAndamento}</div>
