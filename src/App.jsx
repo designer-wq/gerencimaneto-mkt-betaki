@@ -2353,18 +2353,18 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros, loading,
   const slaCampanha = (()=>{ const per={}; BASE_DEMANDAS_GLOBAL.forEach(x=>{ if (x.campanha) { const c=x.campanha; const ok=!!(x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo); const tot=!!(x.prazo && x.dataConclusao); const cur=per[c]||{ ok:0, total:0 }; per[c]={ ok:cur.ok+(ok?1:0), total:cur.total+(tot?1:0) } } }); return Object.entries(per).map(([campanha,v])=> ({ campanha, sla: Math.round(100*((v.ok/(v.total||1)))) })) })()
   const inRange = (iso) => { if(!iso) return false; const [y,m,d]=String(iso).split('-').map(Number); if(!y) return false; const dt=new Date(y,m-1,d); const s=toD(filtros.cIni), e=toD(filtros.cFim); if(!s||!e) return true; dt.setHours(0,0,0,0); s.setHours(0,0,0,0); e.setHours(0,0,0,0); return dt>=s && dt<=e }
   const createdInPeriod = BASE_DEMANDAS_GLOBAL.filter(x=> inRange(x.prazo))
-  const totalCriadas = createdInPeriod.length
-  const totalAndamento = createdInPeriod.filter(x=> { const v=String(x.status||'').toLowerCase(); return isPendingStatus(x.status) || isProdStatus(x.status) || v.includes('feedback') }).length
+  const totalCriadas = createdInPeriod.filter(x=> isPendingStatus(x.status)).length
+  const totalAndamento = createdInPeriod.filter(x=> isProdStatus(x.status)).length
   const totalRevisao = createdInPeriod.filter(x=> { const v=String(x.status||'').toLowerCase(); return v.includes('revisar') }).length
   const totalConcluidas = BASE_DEMANDAS_GLOBAL.filter(x=> isDoneStatus(x.status) && inRange(x.prazo)).length
   const kpiInconsistencia = (baseTotal>0) && ([totalCriadas,totalAndamento,totalRevisao,totalConcluidas].some(v=> v===0))
   const statusPeriod = (()=>{ const per={}; createdInPeriod.forEach(x=>{ const s=x.status||'—'; per[s]=(per[s]||0)+1 }); const tot=createdInPeriod.length||1; return Object.entries(per).map(([status,q])=> ({ status, q, pct: Math.round(100*(q/tot)) })).sort((a,b)=> b.q-a.q) })()
   const designerPeriod = (()=>{ const per={}; createdInPeriod.forEach(x=>{ const d=x.designer||'—'; per[d]=(per[d]||0)+1 }); const tot=createdInPeriod.length||1; return Object.entries(per).map(([designer,q])=> ({ designer, q, pct: Math.round(100*(q/tot)) })).sort((a,b)=> b.q-a.q) })()
   const tipoPeriod = (()=>{ const per={}; createdInPeriod.forEach(x=>{ const t=x.tipoMidia||'Outro'; per[t]=(per[t]||0)+1 }); const tot=createdInPeriod.length||1; return Object.entries(per).map(([tipo,q])=> ({ tipo, q, pct: Math.round(100*(q/tot)) })).sort((a,b)=> b.q-a.q) })()
-  const funil = (()=>{ const tot=createdInPeriod.length||1; const criadas=createdInPeriod.length; const emAnd=totalAndamento; const revis=totalRevisao; const concl=BASE_DEMANDAS_GLOBAL.filter(x=> isDoneStatus(x.status) && inRange(x.prazo)).length; const pct = (n)=> Math.round(100*(n/Math.max(1,tot))); return [
+  const funil = (()=>{ const tot=createdInPeriod.length||1; const criadas=totalCriadas; const emProd=totalAndamento; const revis=totalRevisao; const concl=BASE_DEMANDAS_GLOBAL.filter(x=> isDoneStatus(x.status) && inRange(x.prazo)).length; const pct = (n)=> Math.round(100*(n/Math.max(1,tot))); return [
     { label:'Criadas', q: criadas, pct: pct(criadas), color:'#4DA3FF' },
-    { label:'Em andamento', q: emAnd, pct: pct(emAnd), color:'#3b82f6' },
-    { label:'Revisão', q: revis, pct: pct(revis), color:'#9B59B6' },
+    { label:'Em produção', q: emProd, pct: pct(emProd), color:'#3b82f6' },
+    { label:'Em revisão', q: revis, pct: pct(revis), color:'#9B59B6' },
     { label:'Concluídas', q: concl, pct: pct(concl), color:'#10b981' },
   ] })()
   const topAtrasoPeriod = (()=>{ const today=new Date(); today.setHours(0,0,0,0); return createdInPeriod.filter(x=> { if (isDoneStatus(x.status)) return false; if (!x.prazo) return false; const [y,m,d]=String(x.prazo).split('-').map(Number); const dd=new Date(y,m-1,d); dd.setHours(0,0,0,0); return dd<today }).map(x=>{ const [y,m,d]=String(x.prazo).split('-').map(Number); const dd=new Date(y,m-1,d); dd.setHours(0,0,0,0); const late=Math.max(0, Math.round((today-dd)/86400000)); return { ...x, atrasoDias: late } }).sort((a,b)=> b.atrasoDias-a.atrasoDias).slice(0,5) })()
@@ -2509,22 +2509,22 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros, loading,
             <div className="kpi-card" style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:24,border:'1px solid var(--border)',borderRadius:12,height:160,overflow:'hidden',whiteSpace:'nowrap'}}>
               <div className="icon" style={{fontSize:20}}>📌</div>
               <div className="kpi-number" style={{fontSize:28,fontWeight:700}}><CountUp value={totalCriadas} /></div>
-              <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:12}}>Período selecionado</div>
+              <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:12}}>Criadas</div>
             </div>
             <div className="kpi-card" style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:24,border:'1px solid var(--border)',borderRadius:12,height:160,overflow:'hidden',whiteSpace:'nowrap'}}>
               <div className="icon" style={{fontSize:20}}>⏳</div>
               <div className="kpi-number" style={{fontSize:28,fontWeight:700}}><CountUp value={totalAndamento} /></div>
-              <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:12}}>Período selecionado</div>
+              <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:12}}>Em produção</div>
             </div>
             <div className="kpi-card" style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:24,border:'1px solid var(--border)',borderRadius:12,height:160,overflow:'hidden',whiteSpace:'nowrap'}}>
               <div className="icon" style={{fontSize:20}}>🛠</div>
               <div className="kpi-number" style={{fontSize:28,fontWeight:700}}><CountUp value={totalRevisao} /></div>
-              <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:12}}>Período selecionado</div>
+              <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:12}}>Em revisão</div>
             </div>
             <div className="kpi-card" style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:24,border:'1px solid var(--border)',borderRadius:12,height:160,overflow:'hidden',whiteSpace:'nowrap'}}>
               <div className="icon" style={{fontSize:20}}>✅</div>
               <div className="kpi-number" style={{fontSize:28,fontWeight:700}}><CountUp value={totalConcluidas} /></div>
-              <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:12}}>Período selecionado</div>
+              <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:12}}>Concluídas</div>
             </div>
             <div className="kpi-card" style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:24,border:'1px solid var(--border)',borderRadius:12,height:160,overflow:'hidden',whiteSpace:'nowrap'}}>
               <div className="icon" style={{fontSize:20}}>📈</div>
