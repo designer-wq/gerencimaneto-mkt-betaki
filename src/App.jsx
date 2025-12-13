@@ -124,23 +124,34 @@ function Counter({ value }) {
   return <span>{v}</span>
 }
 
-function Sparkline({ series, color='#BCD200' }) {
+function Sparkline({ series, color='#BCD200', avg=null, meta=null, labels=null }) {
   const w = 120, h = 30
   const max = Math.max(...series, 1)
   const step = series.length > 1 ? w/(series.length-1) : w
   const pts = series.map((v,i)=> ({ x:i*step, y: h - (v/max)*h }))
   const points = pts.map(p=> `${p.x},${p.y}`).join(' ')
+  const avgVal = avg!=null ? avg : Math.round(series.reduce((a,b)=> a+b, 0)/(series.length||1))
+  const avgY = h - (avgVal/Math.max(max,1))*h
+  const maxIdx = series.indexOf(Math.max(...series))
+  const minIdx = series.indexOf(Math.min(...series))
   return (
     <svg width={w} height={h} className="sparkline" viewBox={`0 0 ${w} ${h}`}>
       <defs>
-        <linearGradient id="sg" x1="0" x2="1" y1="0" y2="0">
-          <stop offset="0%" stopColor={color} stopOpacity="0.6" />
-          <stop offset="100%" stopColor={color} stopOpacity="1" />
+        <linearGradient id="sgArea" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
-      <polyline points={points} fill="none" stroke="url(#sg)" strokeWidth="2.5" />
+      <polygon points={`0,${h} ${points} ${w},${h}`} fill="url(#sgArea)" />
+      <polyline points={points} fill="none" stroke={color} strokeWidth="2" />
+      <line x1="0" y1={avgY} x2={w} y2={avgY} stroke={color} strokeOpacity="0.35" strokeDasharray="3 3" strokeWidth="1.5" />
+      {meta!=null && (
+        <line x1="0" y1={h - (meta/Math.max(max,1))*h} x2={w} y2={h - (meta/Math.max(max,1))*h} stroke="#888" strokeOpacity="0.5" strokeDasharray="2 2" strokeWidth="1" />
+      )}
       {pts.map((p,i)=> (
-        <circle key={i} cx={p.x} cy={p.y} r="2.5" fill={color} />
+        <circle key={i} cx={p.x} cy={p.y} r={(i===maxIdx||i===minIdx)?3.5:2.5} fill={color}>
+          <title>{labels? labels[i] : `Valor: ${series[i]}`}</title>
+        </circle>
       ))}
     </svg>
   )
@@ -165,6 +176,7 @@ function Icon({ name, size=18 }) {
   if (name==='check') return (<svg {...s}><path d="M20 6 9 17l-5-5"/></svg>)
   if (name==='plus') return (<svg {...s}><path d="M12 5v14"/><path d="M5 12h14"/></svg>)
   if (name==='dot') return (<svg {...s}><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/></svg>)
+  if (name==='alert') return (<svg {...s}><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>)
   if (name==='trash') return (<svg {...s}><path d="M3 6h18"/><path d="M8 6V4h8v2"/><rect x="5" y="6" width="14" height="14" rx="2"/></svg>)
   if (name==='logout') return (<svg {...s}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>)
   if (name==='link') return (<svg {...s}><path d="M10 13a5 5 0 0 0 7.07 0l3.54-3.54a5 5 0 1 0-7.07-7.07L10 4"/><path d="M14 11a5 5 0 0 1-7.07 0L3.39 7.46a5 5 0 1 1 7.07-7.07L14 4"/></svg>)
@@ -454,7 +466,7 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
       </table>
       <div className="table-footer">
         {hasMore && <button className="primary" onClick={showMore}>Mostrar mais demandas</button>}
-        {canCollapse && <button className="primary" onClick={showLess}>Mostrar menos demandas</button>}
+        {canCollapse && <button className="tertiary" onClick={showLess}>Mostrar menos demandas</button>}
       </div>
     </div>
   )
@@ -633,6 +645,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
   const [origem, setOrigem] = useState(initial?.origem || '')
   const [campanha, setCampanha] = useState(initial?.campanha || '')
   const [modelo, setModelo] = useState('')
+  const [menuOpen, setMenuOpen] = useState(false)
   useEffect(()=>{
     setDesigner(initial?.designer || currentUser || '')
     setTipoMidia(initial?.tipoMidia || 'Post')
@@ -693,6 +706,16 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
                 <input className="title editable" type="text" dir="ltr" placeholder="Sem título" value={titulo} onChange={e=> setTitulo(e.target.value)} />
               )}
               <button className="icon" onClick={onClose}><Icon name="close" /></button>
+            </div>
+            <div className="modal-actions-inline">
+              <button className="action-btn" type="button" onClick={()=> setMenuOpen(v=> !v)}>⋯</button>
+              {menuOpen && (
+                <div className="context-menu" onClick={e=> e.stopPropagation()}>
+                  {mode==='edit' && canDelete && (
+                    <button className="tertiary" type="button" onClick={()=>{ setMenuOpen(false); if (window.confirm('Confirmar exclusão desta demanda?')) { onDelete(initial.id); onClose() } }}>Excluir demanda</button>
+                  )}
+                </div>
+              )}
             </div>
         
         <div className={`status-bar ${statusClass(initial?.status || 'Aberta')}`}>
@@ -946,7 +969,6 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
           </div>
         </form>
         <div className="modal-actions">
-          {mode==='edit' && canDelete && <button className="danger" type="button" onClick={()=>{ if (window.confirm('Confirmar exclusão desta demanda?')) { onDelete(initial.id); onClose() } }}>Excluir</button>}
           <button className="primary" type="submit" form="modalForm">Salvar</button>
         </div>
       </div>
@@ -1036,6 +1058,7 @@ function CadastrosView({ cadStatus, setCadStatus, cadTipos, setCadTipos, cadPlat
             </div>
           ))
         )}
+        
       </div>
     </div>
   )
@@ -1112,6 +1135,18 @@ function AppInner() {
       return list.sort((a,b)=> String(b.quando||'').localeCompare(String(a.quando||'')))
     } catch { return [] }
   }, [demandas, user])
+  useEffect(()=>{
+    try {
+      const raw = localStorage.getItem('mk_filtros')
+      if (raw) {
+        const obj = JSON.parse(raw)
+        if (obj && typeof obj==='object') setFiltros(prev=> ({ ...prev, ...obj }))
+      }
+    } catch {}
+  }, [])
+  useEffect(()=>{
+    try { localStorage.setItem('mk_filtros', JSON.stringify(filtros)) } catch {}
+  }, [filtros])
   const revisarCount = useMemo(()=> itemsVisible.filter(x=> /revisar/i.test(String(x.status||''))).length, [itemsVisible])
   const aprovadaCount = useMemo(()=> itemsVisible.filter(x=> /aprovada/i.test(String(x.status||''))).length, [itemsVisible])
   const revisarDesigners = useMemo(()=> Array.from(new Set(itemsVisible.filter(x=> /revisar/i.test(String(x.status||''))).map(x=> displayUser(x.designer||'')))).filter(Boolean), [itemsVisible, displayUser])
@@ -1134,7 +1169,7 @@ function AppInner() {
   const [calRef, setCalRef] = useState(new Date())
   const [groupBy, setGroupBy] = useState('status')
   const userLabel = useMemo(()=> user?.name || user?.username || 'Você', [user])
-  const allRoutes = ['dashboard','demandas','config','cadastros','relatorios','usuarios']
+  const allRoutes = ['executivo','dashboard','demandas','config','cadastros','relatorios','usuarios']
   const allowedRoutes = useMemo(()=> {
     const pages = user?.pages
     const roleCur = user?.role || 'comum'
@@ -1539,8 +1574,11 @@ function AppInner() {
           {!user && (
             <LoginView onLogin={login} />
           )}
+          {user && route==='executivo' && allowedRoutes.includes('executivo') && (
+            <ExecutiveDashboardView demandas={demandas} designers={designersVisible} filtros={filtros} setFiltros={setFiltros} loading={loading} user={user} onEdit={onEdit} setRoute={setRoute} setView={setView} />
+          )}
           {user && route==='dashboard' && allowedRoutes.includes('dashboard') && (
-            <DashboardView demandas={demandas} items={dashItems} designers={dashDesigners} setView={setView} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} compact={compact} calRef={calRef} setCalRef={setCalRef} loading={loading} />
+            <DashboardView demandas={demandas} items={dashItems} designers={dashDesigners} setView={setView} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} compact={compact} calRef={calRef} setCalRef={setCalRef} loading={loading} setRoute={setRoute} setFiltros={setFiltros} user={user} />
           )}
           {user && route==='demandas' && allowedRoutes.includes('demandas') && (
             <div className="demandas-layout">
@@ -1580,7 +1618,7 @@ function AppInner() {
             <CadastrosView cadStatus={cadStatus} setCadStatus={setCadStatus} cadTipos={cadTipos} setCadTipos={setCadTipos} cadPlataformas={cadPlataformas} setCadPlataformas={setCadPlataformas} cadOrigens={cadOrigens} setCadOrigens={setCadOrigens} cadStatusColors={cadStatusColors} setCadStatusColors={setCadStatusColors} />
           )}
           {user && route==='relatorios' && allowedRoutes.includes('relatorios') && (
-            <ReportsView demandas={demandas} items={itemsVisible} designers={designersVisible} filtros={filtros} setFiltros={setFiltros} loading={loading} />
+            <ReportsView demandas={demandas} items={itemsVisible} designers={designersVisible} filtros={filtros} setFiltros={setFiltros} loading={loading} onEdit={onEdit} setRoute={setRoute} setView={setView} />
           )}
           {user && route==='usuarios' && allowedRoutes.includes('usuarios') && (
             <UsersView role={role} />
@@ -1618,8 +1656,8 @@ function Sidebar({ route, setRoute, allowedRoutes }) {
         <ul className="nav-list">
           {allowedRoutes.map(r=> (
             <li key={r}><a href="#" className={`nav-link ${route===r?'active':''}`} onClick={e=>{ e.preventDefault(); setRoute(r) }}>
-              <span className="nav-ico">{r==='dashboard'?<Icon name="dashboard" />: r==='demandas'?<Icon name="demandas" />: r==='config'?<Icon name="config" />: r==='cadastros'?<Icon name="cadastros" />: r==='relatorios'?<Icon name="relatorios" />:<Icon name="usuarios" />}</span>
-              <span>{r==='dashboard'?'Dashboard': r==='demandas'?'Demandas': r==='config'?'Configurações': r==='cadastros'?'Cadastros': r==='relatorios'?'Relatórios':'Usuários'}</span>
+              <span className="nav-ico">{r==='executivo'?<Icon name="dashboard" />: r==='dashboard'?<Icon name="dashboard" />: r==='demandas'?<Icon name="demandas" />: r==='config'?<Icon name="config" />: r==='cadastros'?<Icon name="cadastros" />: r==='relatorios'?<Icon name="relatorios" />:<Icon name="usuarios" />}</span>
+              <span>{r==='executivo'?'Executivo': r==='dashboard'?'Dashboard': r==='demandas'?'Demandas': r==='config'?'Configurações': r==='cadastros'?'Cadastros': r==='relatorios'?'Relatórios':'Usuários'}</span>
             </a></li>
           ))}
         </ul>
@@ -1642,7 +1680,7 @@ function UsersView({ users, onCreate, onDelete, onUpdate, role }) {
   const [pages, setPages] = useState({ dashboard:true, demandas:true, config:true, cadastros:true, relatorios:true, usuarios:true })
   const [actions, setActions] = useState({ criar:true, excluir:true, visualizar:true })
   const toggle = (objSetter, key) => objSetter(prev=> ({ ...prev, [key]: !prev[key] }))
-  const create = async ()=>{ const u=username.trim(); const em=(email.trim()||`${u}@betaki.bet.br`); if(!u||!password) return; const profile={ name: name||u, role: urole, cargo, pages, actions }; try { if (fns) { const call = httpsCallable(fns, 'createUser'); await call({ username: u, password, email: em, profile }); try { window.alert('Usuário criado com sucesso!') } catch {} } } catch (e) { try { if (fns) { const url = 'https://us-central1-mkt-betaki.cloudfunctions.net/createUser'; const call2 = httpsCallableFromURL(fns, url); await call2({ username: u, password, email: em, profile }); try { window.alert('Usuário criado com sucesso!') } catch {} } else { throw e } } catch (e2) { try { window.alert(String(e2?.code||e2?.message||'Falha ao criar usuário')) } catch {} } } setUsername(''); setName(''); setPassword(''); setEmail(''); setUrole('comum'); setCargo('Designer'); setPages({ dashboard:true, demandas:true, config:true, cadastros:true, relatorios:true, usuarios:true }); setActions({ criar:true, excluir:true, visualizar:true }) }
+  const create = async ()=>{ if (role!=='admin') { try { window.alert('Apenas usuários com perfil admin podem criar novos usuários.') } catch {} ; return } const u=username.trim(); const em=(email.trim()||`${u}@betaki.bet.br`); if(!u||!password) return; const profile={ name: name||u, role: urole, cargo, pages, actions }; try { if (fns) { const call = httpsCallable(fns, 'createUser'); await call({ username: u, password, email: em, profile }); try { window.alert('Usuário criado com sucesso!') } catch {} } } catch (e) { try { if (fns) { const url = 'https://us-central1-mkt-betaki.cloudfunctions.net/createUser'; const call2 = httpsCallableFromURL(fns, url); await call2({ username: u, password, email: em, profile }); try { window.alert('Usuário criado com sucesso!') } catch {} } else { throw e } } catch (e2) { try { window.alert(String(e2?.code||e2?.message||'Falha ao criar usuário')) } catch {} } } setUsername(''); setName(''); setPassword(''); setEmail(''); setUrole('comum'); setCargo('Designer'); setPages({ dashboard:true, demandas:true, config:true, cadastros:true, relatorios:true, usuarios:true }); setActions({ criar:true, excluir:true, visualizar:true }) }
   const del = async (u)=>{
     if ((u.username||u.id)==='admin') return
     if (db) {
@@ -1697,7 +1735,7 @@ function UsersView({ users, onCreate, onDelete, onUpdate, role }) {
             ))}
           </div>
         </div>
-        <div className="modal-actions"><button className="primary" type="button" onClick={create}>Criar usuário</button></div>
+        <div className="modal-actions"><button className="primary" type="button" onClick={create} disabled={role!=='admin'}>Criar usuário</button></div>
       </div>
       <div className="section-divider" />
       <table className="report-matrix">
@@ -1870,6 +1908,7 @@ function ConfigView({ themeVars, setThemeVars, onReset, appSettings, setAppSetti
 }
 function FilterBar({ filtros, setFiltros, designers, showSearch, statusCounts }) {
   const [period, setPeriod] = useState('today')
+  const [advOpen, setAdvOpen] = useState(false)
   useEffect(()=>{
     const d = new Date()
     const toYMD = x => { const p = n=>String(n).padStart(2,'0'); return `${x.getFullYear()}-${p(x.getMonth()+1)}-${p(x.getDate())}` }
@@ -1885,10 +1924,11 @@ function FilterBar({ filtros, setFiltros, designers, showSearch, statusCounts })
     if (period==='month') setFiltros(prev=>({ ...prev, sIni: toYMD(startOfMonth), sFim: toYMD(endOfMonth), cIni:'', cFim:'' }))
     if (period==='lastmonth') setFiltros(prev=>({ ...prev, sIni: toYMD(startOfLastMonth), sFim: toYMD(endOfLastMonth), cIni:'', cFim:'' }))
     if (period==='last30') { const s = new Date(d); s.setDate(s.getDate()-29); setFiltros(prev=>({ ...prev, sIni: toYMD(s), sFim: toYMD(d), cIni:'', cFim:'' })) }
+    if (period==='custom') { /* datas serão definidas pelo usuário via cIni/cFim; não alterar aqui */ }
   },[period])
   const setDesigner = (v) => setFiltros(prev=> ({ ...prev, designer: v==='Todos'?'':v }))
-  const list = ['Hoje','Semana','Próxima semana','Mês','Mês passado','Últimos 30 dias']
-  const keyOf = s => s==='Hoje'?'today': s==='Semana'?'week': s==='Próxima semana'?'nextweek': s==='Mês'?'month': s==='Mês passado'?'lastmonth':'last30'
+  const list = ['Hoje','Semana','Próxima semana','Mês','Mês passado','Período customizado']
+  const keyOf = s => s==='Hoje'?'today': s==='Semana'?'week': s==='Próxima semana'?'nextweek': s==='Mês'?'month': s==='Mês passado'?'lastmonth':'custom'
   const designersKeys = ['Todos', ...designers]
   const colorOf = (s) => {
     if (s==='Pendente') return 'gray'
@@ -1919,9 +1959,18 @@ function FilterBar({ filtros, setFiltros, designers, showSearch, statusCounts })
         <div className="seg">
           <div className="filter-title">Período</div>
           {list.map(lbl=> (
-            <button key={lbl} className={`btn-md ${period===keyOf(lbl)?'active':''}`} onClick={()=> setPeriod(keyOf(lbl))}>
-              <span className="icon"><Icon name="calendar" /></span><span>{lbl}</span>
-            </button>
+            lbl==='Período customizado' ? (
+              <div key={lbl} className="date-pill" title="Período customizado">
+                <span className="icon"><Icon name="calendar" /></span>
+                <input type="date" value={filtros.cIni||''} onChange={e=> { setFiltros(prev=> ({ ...prev, cIni: e.target.value })); setPeriod('custom') }} />
+                <span style={{color:'var(--muted)'}}>—</span>
+                <input type="date" value={filtros.cFim||''} onChange={e=> { setFiltros(prev=> ({ ...prev, cFim: e.target.value })); setPeriod('custom') }} />
+              </div>
+            ) : (
+              <button key={lbl} className={`btn-md ${period===keyOf(lbl)?'active':''}`} onClick={()=> setPeriod(keyOf(lbl))}>
+                <span className="icon"><Icon name="calendar" /></span><span>{lbl}</span>
+              </button>
+            )
           ))}
         </div>
         <div className="seg">
@@ -1932,29 +1981,31 @@ function FilterBar({ filtros, setFiltros, designers, showSearch, statusCounts })
             </button>
           ))}
         </div>
-        <div className="seg">
-          <div className="filter-title">Status</div>
-            {FIXED_STATUS.map(s=> (
-              <button key={s} className={`btn-md ${colorOf(s)} ${((filtros.status||'')===s)?'active':''}`} onClick={()=> setFiltros(prev=> ({ ...prev, status: prev.status===s ? undefined : s }))}>
-                <span className="emoji">{emojiOf(s)}</span><span>{s}</span>{(statusCounts?.[s]>0) ? (<span className="alert-count">{statusCounts[s]}</span>) : null}
-              </button>
-            ))}
-        </div>
-        <div className="seg">
-          <div className="filter-title">Data</div>
-          <div className="date-pill">
-            <span className="icon"><Icon name="calendar" /></span>
-            <input type="date" value={filtros.cIni||''} onChange={e=> setFiltros(prev=> ({ ...prev, cIni: e.target.value }))} />
-            <span style={{color:'var(--muted)'}}>—</span>
-            <input type="date" value={filtros.cFim||''} onChange={e=> setFiltros(prev=> ({ ...prev, cFim: e.target.value }))} />
-          </div>
+        <div className="seg" style={{marginLeft:'auto'}}>
+          <button className="tertiary" type="button" onClick={()=> setAdvOpen(v=> !v)}>{advOpen? 'Ocultar Filtros Avançados' : 'Filtros Avançados'}</button>
         </div>
       </div>
+      {advOpen && (
+        <div className="filters-row">
+          <div className="seg">
+            <div className="filter-title">Status</div>
+              {FIXED_STATUS.map(s=> (
+                <button key={s} className={`btn-md ${colorOf(s)} ${((filtros.status||'')===s)?'active':''}`} onClick={()=> setFiltros(prev=> ({ ...prev, status: prev.status===s ? undefined : s }))}>
+                  <span className="emoji">{emojiOf(s)}</span><span>{s}</span>{(statusCounts?.[s]>0) ? (<span className="alert-count">{statusCounts[s]}</span>) : null}
+                </button>
+              ))}
+          </div>
+          
+        </div>
+      )}
     </div>
   )
 }
 
-function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, cadStatus, onDelete, onDuplicate, compact, calRef, setCalRef, loading }) {
+function DashboardView({ demandas, items: itemsParam, designers, setView, onEdit, onStatus, cadStatus, onDelete, onDuplicate, compact, calRef, setCalRef, loading, setRoute, setFiltros, user }) {
+  const isAdmin = (user?.role==='admin')
+  const username = user?.username||''
+  const items = !isAdmin ? (itemsParam||[]).filter(x=> (x.designer||'')===username) : (itemsParam||[])
   const total = items.length
   const concluidos = items.filter(x=> isDoneStatus(x.status))
   const produTotal = concluidos.length
@@ -1974,13 +2025,15 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
   const capacidadeUsadaPct = (()=>{ const ideal=capacidadeIdealEquipe; if(!ideal) return 0; return Math.round(100 * (produTotal/ideal)) })()
   const emProducao = items.filter(x=> isProdStatus(x.status)).length
   const pendentes = items.filter(x=> isPendingStatus(x.status)).length
+  const designersList = !isAdmin ? [username] : designers
   const workloadRows = (()=>{
     const per = {}
     concluidos.forEach(x=>{ const d=x.designer||'—'; per[d]=(per[d]||0)+1 })
     const ideal = capacityPerDay * daysInPeriod
-    return designers.map(d=>{ const real = per[d]||0; const used = ideal ? Math.round(100*(real/ideal)) : 0; const status = ideal===0 ? 'Verde' : used<=90?'Verde': used<=110?'Amarelo':'Vermelho'; return { designer:d, ideal, real, used, status } })
+    return designersList.map(d=>{ const real = per[d]||0; const used = ideal ? Math.round(100*(real/ideal)) : 0; const status = ideal===0 ? 'Verde' : used<=90?'Verde': used<=110?'Amarelo':'Vermelho'; return { designer:d, ideal, real, used, status } })
   })()
   const ativosPorDesigner = (()=>{ const per={}; items.forEach(x=>{ if (!isDoneStatus(x.status)) { const d=x.designer||'—'; per[d]=(per[d]||0)+1 } }); return per })()
+  
   const mensagensIA = (()=>{
     const msgs = []
     workloadRows.forEach(r=>{
@@ -1991,6 +2044,10 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
     })
     const criticos = items.filter(x=> { if (isDoneStatus(x.status)) return false; if(!x.prazo) return false; const [y,m,d]=String(x.prazo).split('-').map(Number); const end=new Date(y,(m||1)-1,(d||1)); const start=new Date(); start.setHours(0,0,0,0); end.setHours(0,0,0,0); return (end-start)<=86400000 })
     criticos.slice(0,5).forEach(x=> msgs.push(`Prazo crítico: ${x.titulo} (${x.designer||'—'})`))
+    if (msgs.length===0) {
+      if (capacidadeUsadaPct<=70) msgs.push('Bom momento para antecipar demandas futuras.')
+      msgs.push('Capacidade disponível para novos projetos.')
+    }
     return msgs
   })()
   const conclPorDesigner = (()=>{ const m=new Map(); concluidos.forEach(x=> m.set(x.designer||'—',(m.get(x.designer||'—')||0)+1)); return Array.from(m.entries()).map(([designer,qty])=>({designer,qty})) })()
@@ -2023,6 +2080,58 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
     items.forEach(x=>{ if (x.startedAt) { try{ const dt=new Date(x.startedAt); const h=dt.getHours(); if(h>=8 && h<=18){ const d=x.designer||'—'; const idx=h-8; if(per[d]) per[d][idx]++ } }catch{} } })
     return { horas, per }
   })()
+  const now = new Date()
+  const startM = new Date(now.getFullYear(), now.getMonth(), 1)
+  const endM = new Date(now.getFullYear(), now.getMonth()+1, 0)
+  const startPrev = new Date(now.getFullYear(), now.getMonth()-1, 1)
+  const endPrev = new Date(now.getFullYear(), now.getMonth(), 0)
+  const toD = s=>{ if(!s) return null; const [y,m,dd]=String(s).split('-').map(Number); if(!y) return null; return new Date(y,m-1,dd) }
+  const inMonth = (dt, start, end)=>{ if(!dt) return false; dt.setHours(0,0,0,0); return dt>=start && dt<=end }
+  const conclThis = items.filter(x=> isDoneStatus(x.status) && inMonth(toD(x.dataConclusao), startM, endM))
+  const conclPrev = items.filter(x=> isDoneStatus(x.status) && inMonth(toD(x.dataConclusao), startPrev, endPrev))
+  const createdThis = items.filter(x=> inMonth(toD(x.dataCriacao||x.dataSolicitacao), startM, endM))
+  const createdPrev = items.filter(x=> inMonth(toD(x.dataCriacao||x.dataSolicitacao), startPrev, endPrev))
+  const atrasadas = items.filter(x=> { if (isDoneStatus(x.status)) return false; if (!x.prazo) return false; const d=toD(x.prazo); const today=new Date(); today.setHours(0,0,0,0); return d && d<today })
+  const backlogRisco = items.filter(x=> { if (isDoneStatus(x.status)) return false; if (!x.prazo) return false; const d=toD(x.prazo); const today=new Date(); today.setHours(0,0,0,0); if(!d) return false; const near=(d - today)<=86400000; return near }).length
+  const slaPctThis = (()=>{ const ok=conclThis.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot=conclThis.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })()
+  const slaPctPrev = (()=>{ const ok=conclPrev.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot=conclPrev.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })()
+  const diffDays = (a,b)=>{ const da=toD(a), db=toD(b); if(!da||!db) return null; return Math.max(0, Math.round((db-da)/86400000)) }
+  const leadAvg = arr=>{ const vals=arr.map(x=> diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg=(vals.reduce((a,b)=>a+b,0)/(vals.length||1)); return +(avg||0).toFixed(1) }
+  const leadThis = leadAvg(conclThis)
+  const leadPrev = leadAvg(conclPrev)
+  const retrabThis = (()=>{ const tot=conclThis.length; const com=conclThis.filter(x=> (x.revisoes||0)>0).length; return Math.round(100*(com/Math.max(1,tot))) })()
+  const retrabPrev = (()=>{ const tot=conclPrev.length; const com=conclPrev.filter(x=> (x.revisoes||0)>0).length; return Math.round(100*(com/Math.max(1,tot))) })()
+  const prodThis = conclThis.length
+  const prodPrev = conclPrev.length
+  const criadasThis = createdThis.length
+  const criadasPrev = createdPrev.length
+  const dailySeries = (days, fn) => { const s=[]; const today=new Date(); for(let i=days-1;i>=0;i--){ const d=new Date(today); d.setDate(d.getDate()-i); const ymd=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; s.push(fn(ymd,d)) } return s }
+  const seriesSla30 = dailySeries(30,(ymd,dt)=>{ const list=items.filter(x=> String(x.dataConclusao||'')===String(ymd)); const ok=list.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot=list.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })
+  const seriesLead30 = dailySeries(30,(ymd,dt)=>{ const list=items.filter(x=> String(x.dataConclusao||'')===String(ymd)); const vals=list.map(x=> diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg=(vals.reduce((a,b)=>a+b,0)/(vals.length||1)); return Math.round(avg||0) })
+  const seriesProd30 = dailySeries(30,(ymd,dt)=> items.filter(x=> String(x.dataConclusao||'')===String(ymd)).length)
+  const avgSla30 = Math.round(seriesSla30.reduce((a,b)=>a+b,0)/(seriesSla30.length||1))
+  const avgLead30 = Math.round(seriesLead30.reduce((a,b)=>a+b,0)/(seriesLead30.length||1))
+  const avgProd30 = Math.round(seriesProd30.reduce((a,b)=>a+b,0)/(seriesProd30.length||1))
+  const labels30 = dailySeries(30,(ymd,dt)=> dt.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' }))
+  const attCard = (()=>{
+    if (atrasadas.length>0) return { text:`⚠️ Existem ${atrasadas.length} demandas atrasadas hoje.`, tone:'alert', onClick:()=> goList({ sFim: (()=>{ const t=new Date(); t.setDate(t.getDate()-1); const p=n=>String(n).padStart(2,'0'); return `${t.getFullYear()}-${p(t.getMonth()+1)}-${p(t.getDate())}` })(), status:'' }) }
+    const overList = designersList.map(d=>{ const ativos=ativosPorDesigner[d]||0; const used = Math.min(100, Math.round(100 * (ativos/(capacityPerDay*2||1)))); return { d, used } }).sort((a,b)=> b.used-a.used)
+    const over = overList.find(x=> x.used>=80)
+    if (over) return { text:`⚠️ ${over.d} está acima da capacidade ideal.`, tone:'warn', onClick:()=> goList({ designer: over.d }) }
+    return { text:'✅ Nenhuma ação necessária hoje.', tone:'ok', onClick:null }
+  })()
+  const goList = (f)=>{ setRoute && setRoute('demandas'); setView && setView('table'); setFiltros && setFiltros(prev=> ({ ...prev, ...f })) }
+  const funilExec = (()=>{ const tot=items.length||1; const criadas=items.length; const emProd=items.filter(x=> isProdStatus(x.status)).length; const revis=items.filter(x=> String(x.status||'').toLowerCase().includes('revis')).length; const concl=concluidos.length; const pct=n=> Math.round(100*(n/Math.max(1,tot))); return [
+    { label:'Criadas', q: criadas, pct: pct(criadas), color:'#4DA3FF' },
+    { label:'Em Produção', q: emProd, pct: pct(emProd), color:'#9AA0A6' },
+    { label:'Em Revisão', q: revis, pct: pct(revis), color:'#FFE55C' },
+    { label:'Concluídas', q: concl, pct: pct(concl), color:'#00C58E' },
+  ] })()
+  const scorecardData = designersList.map(d=> { const mine = items.filter(x=> (x.designer||'—')===d); const concl = concluidos.filter(x=> (x.designer||'—')===d); const conclCnt = concl.length; const sla = (()=>{ const ok=concl.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot=concl.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })(); const lead = (()=>{ const vals=concl.map(x=> diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg=(vals.reduce((a,b)=>a+b,0)/(vals.length||1)); return +(avg||0).toFixed(1) })(); const ret = (()=>{ const tot=mine.length||1; const withRev=mine.filter(x=> (x.revisoes||0)>0).length; return Math.round(100*(withRev/Math.max(1,tot))) })(); const ideal=capacityPerDay*daysInPeriod; const ativos=ativosPorDesigner[d]||0; const used = ideal ? Math.min(100, Math.round(100*(ativos/ideal))) : 0; return { designer:d, concl:conclCnt, sla, lead, ret, used } })
+  const sortedScore = scorecardData.slice().sort((a,b)=> b.sla!==a.sla? (b.sla-a.sla) : b.concl!==a.concl? (b.concl-a.concl) : b.ret!==a.ret? (a.ret-b.ret) : (a.lead-b.lead))
+  const topAtraso = (()=>{ const map={}; items.forEach(x=>{ if(!isDoneStatus(x.status) && x.prazo && String(x.prazo)<String(hojeISO())){ const d=x.designer||'—'; map[d]=(map[d]||0)+1 } }); const arr=Object.entries(map).map(([designer,q])=>({designer,q})).sort((a,b)=> b.q-a.q); return arr[0]||null })()
+  const topLead = (()=>{ const per={}; designersList.forEach(d=>{ const vals=concluidos.filter(x=> (x.designer||'—')===d).map(x=> diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg = vals.length ? +(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1) : null; if(avg!=null) per[d]=avg }); const arr=Object.entries(per).map(([designer,lead])=>({designer,lead})).sort((a,b)=> b.lead-a.lead); return arr[0]||null })()
+  const topRet = (()=>{ const per={}; designersList.forEach(d=>{ const mine = items.filter(x=> (x.designer||'—')===d); const avg = mine.length ? +(mine.reduce((a,x)=> a+(x.revisoes||0),0)/mine.length).toFixed(2) : null; if(avg!=null) per[d]=avg }); const arr=Object.entries(per).map(([designer,ret])=>({designer,ret})).sort((a,b)=> b.ret-a.ret); return arr[0]||null })()
   if (loading) {
     return (
       <div className="dashboard">
@@ -2036,93 +2145,110 @@ function DashboardView({ demandas, items, designers, setView, onEdit, onStatus, 
     )
   }
   return (
-    <div className="dashboard">
-      <div className="exec-summary">
-        <div className="exec-title">RESUMO EXECUTIVO DO PERÍODO</div>
-        <div className="exec-grid">
-          <div className="exec-metric"><div className="exec-label">Produção total</div><div className="exec-value">{produTotal}</div></div>
-          <div className="exec-metric"><div className="exec-label">SLA geral</div><div className="exec-value" style={{color: slaGeralPct>=90?'#BCD200': slaGeralPct>=70?'#FFE55C':'#FF5E5E'}}>{slaGeralPct}%</div></div>
-          <div className="exec-metric"><div className="exec-label">% retrabalho</div><div className="exec-value">{retrabalhoPct}%</div></div>
-          <div className="exec-metric"><div className="exec-label">Backlog atual</div><div className="exec-value">{backlog}</div></div>
-          <div className="exec-metric"><div className="exec-label">Capacidade usada</div><div className="exec-value">{capacidadeUsadaPct}%</div><div className="progress"><div className="progress-fill" style={{width:`${capacidadeUsadaPct}%`, background:'#BCD200'}} /></div></div>
-        </div>
-      </div>
-      <div className="section-grid">
-        <div className="section-card">
-          <div className="widget-title">PRODUÇÃO</div>
-          <div className="badge-grid">
-            <div className="badge blue"><div>Criadas</div><div>{total}</div></div>
-            <div className="badge green"><div>Concluídas</div><div>{produTotal}</div></div>
-            <div className="badge yellow"><div>Em produção</div><div>{emProducao}</div></div>
-            <div className="badge"><div>Pendentes</div><div>{pendentes}</div></div>
-          </div>
-        </div>
-        <div className="section-card">
-          <div className="widget-title">QUALIDADE</div>
-          <div className="badge-group">
-            <div className="badge purple"><div>Revisões</div><div>{revisoesTot}</div></div>
-            <div className="badge"><div>% Retrabalho</div><div>{retrabalhoPct}%</div></div>
-            <div className="badge green"><div>SLA</div><div>{slaGeralPct}%</div></div>
-          </div>
-        </div>
-        <div className="section-card">
-          <div className="widget-title">PESSOAS</div>
-          <table className="report-matrix">
-            <thead><tr><th>#</th><th>Designer</th><th>Score</th><th>SLA%</th><th>%Retrab</th></tr></thead>
-            <tbody>
-              {ranking.map((r,i)=> (<tr key={r.designer}><td>{i+1}</td><td>{r.designer}</td><td>{r.score}</td><td>{r.sla}%</td><td>{Math.round((r.retrab||0)*100)/100}</td></tr>))}
-            </tbody>
-          </table>
-        </div>
-        <div className="section-card">
-          <div className="widget-title">OPERAÇÃO</div>
-          <div className="section-divider" />
-          <table className="report-matrix">
-            <thead><tr><th>Designer</th><th>Capacidade ideal</th><th>Produção real</th><th>Capacidade usada</th><th>Status</th></tr></thead>
-            <tbody>
-              {workloadRows.map(r=> (<tr key={r.designer}><td>{r.designer}</td><td>{r.ideal}</td><td>{r.real}</td><td>{r.used}%</td><td style={{color:r.status==='Verde'?'#00C58E': r.status==='Amarelo'?'#FFE55C':'#FF5E5E'}}>{r.status}</td></tr>))}
-            </tbody>
-          </table>
-        </div>
-        <div className="section-card">
-          <div className="widget-title">ASSISTENTE IA</div>
-          <div className="insights-grid">
-            {mensagensIA.map((t,i)=> (
-              <div key={i} className="insight-card" style={{opacity:0,animation:'pageIn .6s forwards'}}><div className="insight-ico">★</div><div className="insight-text">{t}</div></div>
-            ))}
-          </div>
-        </div>
-      </div>
-      <div className="section-grid">
-        <div className="section-card">
-          <div className="widget-title">HEATMAP DE PRODUTIVIDADE POR HORÁRIO</div>
-          <div className="heatmap">
-            <div className="heat-row" style={{gap:6,color:'var(--muted)'}}>
-              <div className="chart-label" style={{width:120}} />
-              {heatmapHoras.horas.map(h=> (<div key={h} style={{width:24,textAlign:'center'}}>{String(h).padStart(2,'0')}h</div>))}
+    <div className="reports" data-loading={loading?'true':'false'}>
+      <div className="reports-stack" style={{display:'block'}}>
+        <div className="report-card" style={{padding:24,borderRadius:12,boxShadow:'0 8px 24px rgba(0,0,0,0.2)',marginBottom:32}}>
+          <div className="report-title">Resumo Pessoal</div>
+          <div className="kpi-grid" style={{display:'grid',gridTemplateColumns:'repeat(4, minmax(180px, 1fr))',gap:16}}>
+            <div className="kpi-card" style={{padding:20,border:'1px solid var(--border)',borderRadius:12}}>
+              <div className="kpi-subtext" style={{color:'var(--muted)',marginBottom:6}}>Demandas atribuídas</div>
+              <div className="kpi-number" style={{fontSize:32,fontWeight:800}}><CountUp value={total} /></div>
             </div>
-            {designers.map(d=> (
-              <div key={d} className="heat-row" style={{alignItems:'center'}}>
-                <div className="chart-label" style={{width:120}}>{d}</div>
-                {heatmapHoras.horas.map((h,idx)=> { const v=(heatmapHoras.per[d]||[])[idx]||0; const color=v===0?'#222': v<2?'#4DA3FF33':'#4DA3FF'; return (<div key={h} className="heat-cell" style={{background:color,width:24,height:24}} title={`${d} ${String(h).padStart(2,'0')}h: ${v}`} />) })}
-              </div>
-            ))}
+            <div className="kpi-card" style={{padding:20,border:'1px solid var(--border)',borderRadius:12}}>
+              <div className="kpi-subtext" style={{color:'var(--muted)',marginBottom:6}}>Demandas concluídas</div>
+              <div className="kpi-number" style={{fontSize:32,fontWeight:800}}><CountUp value={produTotal} /></div>
+            </div>
+            <div className="kpi-card" style={{padding:20,border:'1px solid var(--border)',borderRadius:12}}>
+              <div className="kpi-subtext" style={{color:'var(--muted)',marginBottom:6}}>Demandas em andamento</div>
+              <div className="kpi-number" style={{fontSize:32,fontWeight:800}}><CountUp value={items.filter(x=> !isDoneStatus(x.status)).length} /></div>
+            </div>
+            <div className="kpi-card" style={{padding:20,border:'1px solid var(--border)',borderRadius:12}}>
+              <div className="kpi-subtext" style={{color:'var(--muted)',marginBottom:6}}>SLA pessoal</div>
+              {(()=>{ const slaColor = slaGeralPct>=90? 'var(--status-success)' : (slaGeralPct>=70? 'var(--status-warning)' : 'var(--status-danger)'); const slaState = slaGeralPct>=90? 'ok' : (slaGeralPct>=70? 'warn' : 'danger'); return (
+                <div className={`progress sla ${slaState}`} style={{height:16,background:'var(--bg-secondary)',borderRadius:10,overflow:'hidden'}} title="SLA pessoal">
+                  <div className="progress-fill" style={{width:`${slaGeralPct}%`,height:'100%',background:slaColor}} />
+                </div>
+              ) })()}
+            </div>
           </div>
         </div>
-        <div className="section-card">
-          <div className="widget-title">LINHA DO TEMPO DE PRODUÇÃO MENSAL</div>
-          <div className="chips">
-            {conclPorDesigner.map(({designer,qty})=> (
-              <div key={designer} style={{display:'inline-flex',alignItems:'center',gap:6}}><span className="chip">{designer}</span><Sparkline series={[Math.max(1,qty-1), qty, qty+1]} color="#4DA3FF" /></div>
-            ))}
-          </div>
+        <div className="report-card" style={{padding:24,borderRadius:12,boxShadow:'0 8px 24px rgba(0,0,0,0.2)',marginBottom:32}}>
+          <div className="report-title">Funil Pessoal</div>
+          <div className="section-divider" />
+          {(()=>{ const tot=items.length||1; const criadas=items.length; const emProd=items.filter(x=> isProdStatus(x.status)).length; const revis=items.filter(x=> String(x.status||'').toLowerCase().includes('revis')).length; const concl=concluidos.length; const pct=n=> Math.round(100*(n/Math.max(1,tot))); const segs=
+            [
+            { label:'Criadas', q: criadas, pct: pct(criadas), color:'var(--status-info)' },
+            { label:'Em produção', q: emProd, pct: pct(emProd), color:'var(--text-muted)' },
+            { label:'Em revisão', q: revis, pct: pct(revis), color:'var(--status-warning)' },
+            { label:'Concluídas', q: concl, pct: pct(concl), color:'var(--status-success)' },
+          ]; return (
+            <div>
+              {segs.map((s,i)=> (
+                <div key={i} style={{display:'flex',alignItems:'center',gap:10,margin:'10px 0'}}>
+                  <div style={{minWidth:160,color:'var(--muted)'}}>{s.label}</div>
+                  <div style={{flex:1,background:'var(--bg-secondary)',borderRadius:10,overflow:'hidden'}} title={`${s.label}: ${s.q}`}>
+                    <BarFill pct={s.pct} color={s.color} height={18} />
+                  </div>
+                  <div style={{minWidth:80,textAlign:'right'}}>{s.q}</div>
+                </div>
+              ))}
+            </div>
+          ) })()}
+        </div>
+        <div className="report-card" style={{padding:24,borderRadius:12,boxShadow:'0 8px 24px rgba(0,0,0,0.2)',marginBottom:32}}>
+          <div className="report-title">Progresso Pessoal</div>
+          <div className="section-divider" />
+          {(()=>{ const totalMes = createdThis.length||1; const taxaConclusao = Math.round(100*((prodThis)/(Math.max(1,totalMes)))); const retrab = retrabThis; const metaSla=90; const slaColor = slaPctThis>=metaSla? 'var(--status-success)' : (slaPctThis>=70? 'var(--status-warning)' : 'var(--status-danger)'); const taxaColor = taxaConclusao>=70? 'var(--status-success)' : taxaConclusao>=40? 'var(--status-warning)' : 'var(--status-danger)'; const retrabColor = retrab<=15? 'var(--status-success)' : retrab<=30? 'var(--status-warning)' : 'var(--status-danger)'; return (
+            <div className="kpi-grid" style={{display:'grid',gridTemplateColumns:'repeat(3, minmax(220px, 1fr))',gap:16}}>
+              <div className="kpi-card" style={{padding:20,border:'1px solid var(--border)',borderRadius:12}}>
+                <div style={{color:'var(--muted)',marginBottom:6}}>Taxa de conclusão no período</div>
+                <div className="progress" style={{height:16,background:'var(--bg-secondary)',borderRadius:10,overflow:'hidden'}}>
+                  <div className="progress-fill" style={{width:`${taxaConclusao}%`,height:'100%',background:taxaColor}} />
+                </div>
+              </div>
+              <div className="kpi-card" style={{padding:20,border:'1px solid var(--border)',borderRadius:12}}>
+                <div style={{color:'var(--muted)',marginBottom:6}}>Retrabalho pessoal</div>
+                <div className="progress" style={{height:16,background:'var(--bg-secondary)',borderRadius:10,overflow:'hidden'}}>
+                  <div className="progress-fill" style={{width:`${retrab}%`,height:'100%',background:retrabColor}} />
+                </div>
+              </div>
+              <div className="kpi-card" style={{padding:20,border:'1px solid var(--border)',borderRadius:12}}>
+                <div style={{color:'var(--muted)',marginBottom:6}}>SLA pessoal vs meta</div>
+                <div className="progress" style={{height:16,background:'var(--bg-secondary)',borderRadius:10,overflow:'hidden'}}>
+                  <div className="progress-fill" style={{width:`${slaPctThis}%`,height:'100%',background:slaColor}} />
+                </div>
+              </div>
+            </div>
+          ) })()}
+        </div>
+        <div className="report-card" style={{padding:24,borderRadius:12,boxShadow:'0 8px 24px rgba(0,0,0,0.2)'}}>
+          <div className="report-title">Minhas Demandas</div>
+          <div className="section-divider" />
+          {items.length===0 ? (
+            <div className="empty-state"><span className="icon"><Icon name="table" /></span><span>Nenhuma demanda atribuída.</span></div>
+          ) : (
+          <table className="report-matrix" style={{whiteSpace:'nowrap',tableLayout:'fixed',width:'100%'}}>
+            <thead><tr><th>Demanda</th><th>Status</th><th>Tipo</th><th>Prazo</th><th>SLA</th></tr></thead>
+            <tbody>
+              {items.map(it=>{ const okSla = !!(it.prazo && it.dataConclusao && it.dataConclusao<=it.prazo); const slaText = isDoneStatus(it.status) ? (okSla?'No prazo':'Estourado') : (it.prazo? '—':'—'); return (
+                <tr key={it.id} className="row-clickable" onClick={()=> onEdit && onEdit(it)}>
+                  <td>{it.titulo||'(sem título)'}</td>
+                  <td>{it.status||'—'}</td>
+                  <td>{it.tipoMidia||'—'}</td>
+                  <td>{it.prazo||'—'}</td>
+                  <td style={{color: (isDoneStatus(it.status)? (okSla?'#00C58E':'#FF5E5E') : 'var(--muted)')}}>{slaText}</td>
+                </tr>
+              ) })}
+            </tbody>
+          </table>
+          )}
         </div>
       </div>
     </div>
   )
 }
 
-function ReportsView({ demandas, items, designers, filtros, setFiltros, loading }) {
+function ReportsView({ demandas, items, designers, filtros, setFiltros, loading, onEdit, setRoute, setView }) {
   const periodLabel = ['Hoje','Semana','Mês','Mês passado']
   const keyOf = s => s==='Hoje'?'today': s==='Semana'?'week': s==='Mês'?'month':'lastmonth'
   const [period, setPeriod] = useState('month')
@@ -2144,75 +2270,209 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros, loading 
   },[period])
   const designersKeys = ['Todos', ...designers]
   const setDesigner = (v) => setFiltros(prev=> ({ ...prev, designer: v==='Todos'?'':v }))
-  const tiposKeys = ['Todos', ...Array.from(new Set(demandas.map(x=>x.tipoMidia).filter(Boolean)))]
-  const setTipo = (v) => setFiltros(prev=> ({ ...prev, tipoMidia: v==='Todos'?'':v }))
-  const canaisKeys = ['Todos', ...ORIGENS]
-  const setCanal = (v) => setFiltros(prev=> ({ ...prev, origem: v==='Todos'?'':v }))
-  const campanhasKeys = ['Todos', ...Array.from(new Set(demandas.map(x=>x.campanha).filter(Boolean)))]
-  const setCampanha = (v) => setFiltros(prev=> ({ ...prev, campanha: v==='Todos'?'':v }))
-  const statusKeys = ['Todos', ...FIXED_STATUS]
-  const setStatus = (v) => setFiltros(prev=> ({ ...prev, status: v==='Todos'?'':v }))
+  
+  const [anaLimit, setAnaLimit] = useState(10)
+  const toD = (s)=>{ if(!s) return null; const [y,m,d]=String(s).split('-').map(Number); if(!y) return null; return new Date(y,m-1,d) }
+  const anaDiffDays = (a,b)=>{ const da=toD(a), db=toD(b); if(!da||!db) return null; return Math.max(0, Math.round((db-da)/86400000)) }
+  const BASE_DEMANDAS_GLOBAL = useMemo(()=> Array.isArray(demandas) ? demandas : [], [demandas])
+  const baseTotal = BASE_DEMANDAS_GLOBAL.length
+  const anaConcl = BASE_DEMANDAS_GLOBAL.filter(x=> isDoneStatus(x.status))
+  const slaPct = (()=>{ const ok=anaConcl.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot=anaConcl.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })()
+  const atrasadasList = BASE_DEMANDAS_GLOBAL.filter(x=> { if (isDoneStatus(x.status)) return false; if (!x.prazo) return false; const d=toD(x.prazo); const today=new Date(); today.setHours(0,0,0,0); return d && d<today })
+  const atrasadasPct = Math.round(100*(atrasadasList.length/Math.max(1,baseTotal)))
+  const leadMedio = (()=>{ const vals=anaConcl.map(x=> anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg=(vals.reduce((a,b)=>a+b,0)/(vals.length||1)); return +(avg||0).toFixed(1) })()
+  const retrabalhoMedio = (()=>{ const arr=anaConcl.map(x=> x.revisoes||0); const avg=(arr.reduce((a,b)=>a+b,0)/(arr.length||1)); return +(avg||0).toFixed(2) })()
+  const capacityPerDay = 4
+  const designersCount = designers.length||1
+  const anaDaysInPeriod = (()=>{ const ds=BASE_DEMANDAS_GLOBAL.map(x=> toD(x.dataCriacao||x.dataSolicitacao)).filter(Boolean).sort((a,b)=> a-b); if(!ds.length) return 1; return Math.max(1, Math.round((ds[ds.length-1]-ds[0])/86400000)+1) })()
+  const capacidadeMedia = (()=>{ const ideal=designersCount*capacityPerDay*anaDaysInPeriod; const conclQt=anaConcl.length; return Math.round(100*(conclQt/Math.max(1,ideal))) })()
+  const distPorDesigner = (()=>{ const per={}; BASE_DEMANDAS_GLOBAL.forEach(x=>{ const d=x.designer||'—'; per[d]=(per[d]||0)+1 }); const tot=baseTotal||1; return Object.entries(per).map(([designer,q])=> ({ designer, q, pct: Math.round(100*(q/tot)) })).sort((a,b)=> b.q-a.q) })()
+  const distPorStatus = (()=>{ const per={}; BASE_DEMANDAS_GLOBAL.forEach(x=>{ const s=x.status||'—'; per[s]=(per[s]||0)+1 }); return Object.entries(per).map(([status,q])=> ({ status, q })).sort((a,b)=> b.q-a.q) })()
+  const distPorTipo = (()=>{ const per={}; BASE_DEMANDAS_GLOBAL.forEach(x=>{ const t=x.tipoMidia||'Outro'; per[t]=(per[t]||0)+1 }); return Object.entries(per).map(([tipo,q])=> ({ tipo, q })).sort((a,b)=> b.q-a.q) })()
+  const distPorCanal = (()=>{ const per={}; BASE_DEMANDAS_GLOBAL.forEach(x=>{ const o=x.origem||'Outros'; per[o]=(per[o]||0)+1 }); return Object.entries(per).map(([origem,q])=> ({ origem, q })).sort((a,b)=> b.q-a.q) })()
+  const leadPorDesignerA = (()=>{ const per={}; anaConcl.forEach(x=>{ const d=x.designer||'—'; const t=anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao); if (t!=null) { const cur=per[d]||{cnt:0,sum:0}; per[d]={ cnt:cur.cnt+1, sum:cur.sum+t } } }); return Object.entries(per).map(([designer,v])=> ({ designer, media:+((v.sum/(v.cnt||1)).toFixed(1)) })).sort((a,b)=> a.media-b.media) })()
+  const retrabPorTipoA = (()=>{ const per={}; anaConcl.forEach(x=>{ const t=x.tipoMidia||'Outro'; const r=x.revisoes||0; const cur=per[t]||{ rTot:0, cnt:0 }; per[t]={ rTot:cur.rTot+r, cnt:cur.cnt+1 } }); return Object.entries(per).map(([tipo,v])=> ({ tipo, porPeca:+((v.rTot/(v.cnt||1)).toFixed(2)) })).sort((a,b)=> b.porPeca-a.porPeca) })()
+  const topAtraso = atrasadasList.map(x=>{ const dd=toD(x.prazo); const today=new Date(); today.setHours(0,0,0,0); const late = dd? Math.max(0, Math.round((today-dd)/86400000)) : 0; return { ...x, atrasoDias: late } }).sort((a,b)=> b.atrasoDias-a.atrasoDias).slice(0,5)
+  const topLead = anaConcl.map(x=>{ const lt=anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)||0; return { ...x, leadDias: lt } }).sort((a,b)=> b.leadDias-a.leadDias).slice(0,5)
+  const topRev = anaConcl.slice().sort((a,b)=> (b.revisoes||0)-(a.revisoes||0)).slice(0,5)
   const daysInPeriod = (()=>{
-    const toD = s=>{ if(!s) return null; const [y,m,dd]=s.split('-').map(Number); return new Date(y,m-1,dd) }
-    const s = toD(filtros.cIni), e = toD(filtros.cFim)
+    const toD2 = s=>{ if(!s) return null; const [y,m,dd]=s.split('-').map(Number); return new Date(y,m-1,dd) }
+    const s = toD2(filtros.cIni), e = toD2(filtros.cFim)
     if (!s || !e) return 1
     return Math.max(1, Math.round((e - s)/86400000) + 1)
   })()
-  const concluidos = items.filter(x=> isDoneStatus(x.status))
-  const pendentes = items.filter(x=> isPendingStatus(x.status))
-  const emProducao = items.filter(x=> isProdStatus(x.status))
-  const revisoesTot = items.reduce((acc,x)=> acc + (x.revisoes||0), 0)
+  const concluidos = BASE_DEMANDAS_GLOBAL.filter(x=> isDoneStatus(x.status))
+  const pendentes = BASE_DEMANDAS_GLOBAL.filter(x=> isPendingStatus(x.status))
+  const emProducao = BASE_DEMANDAS_GLOBAL.filter(x=> isProdStatus(x.status))
+  const revisoesTot = BASE_DEMANDAS_GLOBAL.reduce((acc,x)=> acc + (x.revisoes||0), 0)
   const produtividadeMedia = concluidos.length / daysInPeriod
-  const backlogItems = items.filter(x=> !isDoneStatus(x.status))
+  const backlogItems = BASE_DEMANDAS_GLOBAL.filter(x=> !isDoneStatus(x.status))
   const diasRestantes = (p)=>{ if(!p) return null; const [y,m,d]=String(p).split('-').map(Number); const end=new Date(y,(m||1)-1,(d||1)); const start=new Date(); start.setHours(0,0,0,0); end.setHours(0,0,0,0); return Math.round((end - start)/86400000) }
   const backlogRisco = backlogItems.filter(x=> { const dl=diasRestantes(x.prazo); return dl!=null && dl<=2 })
   const prazoMedioBacklog = (()=>{ const arr=backlogItems.map(x=> diasRestantes(x.prazo)).filter(v=> v!=null); const avg = (arr.reduce((a,b)=>a+b,0)/(arr.length||1)); return +avg.toFixed(1) })()
   const atrasoPct = (()=>{ const overdue = backlogItems.filter(x=> { const dl=diasRestantes(x.prazo); return dl!=null && dl<0 }).length; const total=backlogItems.length||1; return Math.round(100*(overdue/total)) })()
   const estadoBacklog = atrasoPct>30 ? 'Acumulando atraso' : 'Saudável'
-  const diffDays = (a,b)=>{ const toD = s=>{ const [y,m,dd]=String(s).split('-').map(Number); return new Date(y,m-1,dd) }; if(!a||!b) return null; return Math.max(0, Math.round((toD(b)-toD(a))/86400000)) }
-  const leadTimes = concluidos.map(x=> diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null)
+  const leadTimes = concluidos.map(x=> anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null)
   const leadTimeMedio = +((leadTimes.reduce((a,b)=>a+b,0)/(leadTimes.length||1)).toFixed(1))
-  const leadPorTipo = (()=>{ const per={}; concluidos.forEach(x=>{ const t=x.tipoMidia||'Outro'; const lt=diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao); if(lt!=null){ const cur=per[t]||{cnt:0,sum:0}; per[t]={ cnt:cur.cnt+1, sum:cur.sum+lt } } }); return Object.entries(per).map(([tipo,v])=> ({ tipo, media:+((v.sum/v.cnt).toFixed(1)) })) })()
-  const leadPorDesigner = (()=>{ const per={}; concluidos.forEach(x=>{ const d=x.designer||'—'; const lt=diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao); if(lt!=null){ const cur=per[d]||{cnt:0,sum:0}; per[d]={ cnt:cur.cnt+1, sum:cur.sum+lt } } }); return Object.entries(per).map(([designer,v])=> ({ designer, media:+((v.sum/v.cnt).toFixed(1)) })) })()
+  const leadPorTipo = (()=>{ const per={}; concluidos.forEach(x=>{ const t=x.tipoMidia||'Outro'; const lt=anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao); if(lt!=null){ const cur=per[t]||{cnt:0,sum:0}; per[t]={ cnt:cur.cnt+1, sum:cur.sum+lt } } }); return Object.entries(per).map(([tipo,v])=> ({ tipo, media:+((v.sum/v.cnt).toFixed(1)) })) })()
+  const leadPorDesigner = (()=>{ const per={}; concluidos.forEach(x=>{ const d=x.designer||'—'; const lt=anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao); if(lt!=null){ const cur=per[d]||{cnt:0,sum:0}; per[d]={ cnt:cur.cnt+1, sum:cur.sum+lt } } }); return Object.entries(per).map(([designer,v])=> ({ designer, media:+((v.sum/v.cnt).toFixed(1)) })) })()
   const mesAtual = new Date(); const mesPassado = new Date(mesAtual.getFullYear(), mesAtual.getMonth()-1, 1)
   const inMonth = (iso, m)=>{ if(!iso) return false; const [y,mm,dd]=iso.split('-').map(Number); const dt=new Date(y,mm-1,dd); return dt.getMonth()===m.getMonth() && dt.getFullYear()===m.getFullYear() }
-  const ltMesAtual = concluidos.filter(x=> inMonth(x.dataConclusao, mesAtual)).map(x=> diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null)
-  const ltMesPassado = concluidos.filter(x=> inMonth(x.dataConclusao, mesPassado)).map(x=> diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null)
+  const ltMesAtual = concluidos.filter(x=> inMonth(x.dataConclusao, mesAtual)).map(x=> anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null)
+  const ltMesPassado = concluidos.filter(x=> inMonth(x.dataConclusao, mesPassado)).map(x=> anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null)
   const compMesAtual = +((ltMesAtual.reduce((a,b)=>a+b,0)/(ltMesAtual.length||1)).toFixed(1))
   const compMesPassado = +((ltMesPassado.reduce((a,b)=>a+b,0)/(ltMesPassado.length||1)).toFixed(1))
-  const ltDesigner = (name)=>{ const arr=concluidos.filter(x=> (x.designer||'')===name).map(x=> diffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); return +((arr.reduce((a,b)=>a+b,0)/(arr.length||1)).toFixed(1)) }
+  const ltDesigner = (name)=>{ const arr=concluidos.filter(x=> (x.designer||'')===name).map(x=> anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); return +((arr.reduce((a,b)=>a+b,0)/(arr.length||1)).toFixed(1)) }
   const revDistrib = (()=>{ const arr=concluidos.map(x=> x.revisoes||0); const tot=arr.length||1; const z=(n)=> Math.round(100*((arr.filter(v=> v===n).length)/tot)); const g=(pred)=> Math.round(100*((arr.filter(pred).length)/tot)); return { sRev:z(0), umaRev:z(1), duasMais:g(v=> v>=2) } })()
-  const retrabalhoPorDesigner = (()=>{ const per={}; items.forEach(x=>{ const d=x.designer||'—'; const r=x.revisoes||0; const cur=per[d]||{ rTot:0, cnt:0 }; per[d]={ rTot:cur.rTot+r, cnt:cur.cnt+1 } }); return Object.entries(per).map(([designer,v])=> ({ designer, porPeca:+((v.rTot/(v.cnt||1)).toFixed(2)) })).sort((a,b)=> b.porPeca-a.porPeca) })()
-  const retrabalhoPorTipo = (()=>{ const per={}; items.forEach(x=>{ const t=x.tipoMidia||'Outro'; const r=x.revisoes||0; const cur=per[t]||{ rTot:0, cnt:0 }; per[t]={ rTot:cur.rTot+r, cnt:cur.cnt+1 } }); return Object.entries(per).map(([tipo,v])=> ({ tipo, porPeca:+((v.rTot/(v.cnt||1)).toFixed(2)) })).sort((a,b)=> b.porPeca-a.porPeca) })()
-  const porCanal = (()=>{ const per={}; items.forEach(x=>{ const o=x.origem||'Outros'; per[o]=(per[o]||0)+1 }); const total=items.length||1; return Object.entries(per).map(([origem,q])=> ({ origem, q, pct: Math.round(100*(q/total)) })) })()
-  const retrabPorCanal = (()=>{ const per={}; items.forEach(x=>{ const o=x.origem||'Outros'; const r=x.revisoes||0; const cur=per[o]||{ rTot:0, cnt:0 }; per[o]={ rTot:cur.rTot+r, cnt:cur.cnt+1 } }); return Object.entries(per).map(([origem,v])=> ({ origem, porPeca:+((v.rTot/(v.cnt||1)).toFixed(2)) })).sort((a,b)=> b.porPeca-a.porPeca) })()
-  const prodPorCanal = (()=>{ const per={}; concluidos.forEach(x=>{ const o=x.origem||'Outros'; per[o]=(per[o]||0)+1 }); return Object.entries(per).map(([origem,q])=> ({ origem, q })).sort((a,b)=> b.q-a.q) })()
+  const retrabalhoPorDesigner = (()=>{ const per={}; BASE_DEMANDAS_GLOBAL.forEach(x=>{ const d=x.designer||'—'; const r=x.revisoes||0; const cur=per[d]||{ rTot:0, cnt:0 }; per[d]={ rTot:cur.rTot+r, cnt:cur.cnt+1 } }); return Object.entries(per).map(([designer,v])=> ({ designer, porPeca:+((v.rTot/(v.cnt||1)).toFixed(2)) })).sort((a,b)=> b.porPeca-a.porPeca) })()
+  const retrabalhoPorTipo = (()=>{ const per={}; BASE_DEMANDAS_GLOBAL.forEach(x=>{ const t=x.tipoMidia||'Outro'; const r=x.revisoes||0; const cur=per[t]||{ rTot:0, cnt:0 }; per[t]={ rTot:cur.rTot+r, cnt:cur.cnt+1 } }); return Object.entries(per).map(([tipo,v])=> ({ tipo, porPeca:+((v.rTot/(v.cnt||1)).toFixed(2)) })).sort((a,b)=> b.porPeca-a.porPeca) })()
+  const porCanal = (()=>{ const per={}; BASE_DEMANDAS_GLOBAL.forEach(x=>{ const o=x.origem||'Outros'; per[o]=(per[o]||0)+1 }); const total=baseTotal||1; return Object.entries(per).map(([origem,q])=> ({ origem, q, pct: Math.round(100*(q/total)) })) })()
+  const retrabPorCanal = (()=>{ const per={}; BASE_DEMANDAS_GLOBAL.forEach(x=>{ const o=x.origem||'Outros'; const r=x.revisoes||0; const cur=per[o]||{ rTot:0, cnt:0 }; per[o]={ rTot:cur.rTot+r, cnt:cur.cnt+1 } }); return Object.entries(per).map(([origem,v])=> ({ origem, porPeca:+((v.rTot/(v.cnt||1)).toFixed(2)) })).sort((a,b)=> b.porPeca-a.porPeca) })()
+  const prodPorCanal = (()=>{ const per={}; anaConcl.forEach(x=>{ const o=x.origem||'Outros'; per[o]=(per[o]||0)+1 }); return Object.entries(per).map(([origem,q])=> ({ origem, q })).sort((a,b)=> b.q-a.q) })()
   const porHora = (()=>{ const per={}; concluidos.forEach(x=>{ const iso=x.finishedAt; if(!iso) return; const h=new Date(iso).getHours(); per[h]=(per[h]||0)+1 }); return per })()
   const tempoMedioReal = (()=>{ const arr=concluidos.map(x=> Number(x.tempoProducaoMs||0)).filter(v=> v>0); const avgMs=(arr.reduce((a,b)=>a+b,0)/(arr.length||1)); const toH=(ms)=> (ms/3600000); return +(toH(avgMs).toFixed(2)) })()
   const velocidadeRanking = (()=>{ const per={}; concluidos.forEach(x=>{ const d=x.designer||'—'; const ms=Number(x.tempoProducaoMs||0); const cur=per[d]||{ cnt:0, sum:0 }; per[d]={ cnt:cur.cnt+1, sum:cur.sum+ms } }); return Object.entries(per).map(([designer,v])=> ({ designer, horas: +((v.sum/(v.cnt||1)/3600000).toFixed(2)) })).sort((a,b)=> a.horas-b.horas) })()
   const qualidadeRanking = retrabalhoPorDesigner.slice().sort((a,b)=> a.porPeca-b.porPeca)
-  const porCampanha = (()=>{ const per={}; items.forEach(x=>{ const c=x.campanha||'—'; per[c]=(per[c]||0)+1 }); return Object.entries(per).map(([campanha,q])=> ({ campanha, q })).sort((a,b)=> b.q-a.q) })()
-  const retrabCampanha = (()=>{ const per={}; items.forEach(x=>{ const c=x.campanha||'—'; const r=x.revisoes||0; const cur=per[c]||{ rTot:0, cnt:0 }; per[c]={ rTot:cur.rTot+r, cnt:cur.cnt+1 } }); return Object.entries(per).map(([campanha,v])=> ({ campanha, porPeca:+((v.rTot/(v.cnt||1)).toFixed(2)) })).sort((a,b)=> b.porPeca-a.porPeca) })()
-  const slaCampanha = (()=>{ const per={}; items.forEach(x=>{ if (x.campanha) { const c=x.campanha; const ok=!!(x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo); const tot=!!(x.prazo && x.dataConclusao); const cur=per[c]||{ ok:0, total:0 }; per[c]={ ok:cur.ok+(ok?1:0), total:cur.total+(tot?1:0) } } }); return Object.entries(per).map(([campanha,v])=> ({ campanha, sla: Math.round(100*((v.ok/(v.total||1)))) })) })()
+  const porCampanha = (()=>{ const per={}; BASE_DEMANDAS_GLOBAL.forEach(x=>{ const c=x.campanha||'—'; per[c]=(per[c]||0)+1 }); return Object.entries(per).map(([campanha,q])=> ({ campanha, q })).sort((a,b)=> b.q-a.q) })()
+  const retrabCampanha = (()=>{ const per={}; BASE_DEMANDAS_GLOBAL.forEach(x=>{ const c=x.campanha||'—'; const r=x.revisoes||0; const cur=per[c]||{ rTot:0, cnt:0 }; per[c]={ rTot:cur.rTot+r, cnt:cur.cnt+1 } }); return Object.entries(per).map(([campanha,v])=> ({ campanha, porPeca:+((v.rTot/(v.cnt||1)).toFixed(2)) })).sort((a,b)=> b.porPeca-a.porPeca) })()
+  const slaCampanha = (()=>{ const per={}; BASE_DEMANDAS_GLOBAL.forEach(x=>{ if (x.campanha) { const c=x.campanha; const ok=!!(x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo); const tot=!!(x.prazo && x.dataConclusao); const cur=per[c]||{ ok:0, total:0 }; per[c]={ ok:cur.ok+(ok?1:0), total:cur.total+(tot?1:0) } } }); return Object.entries(per).map(([campanha,v])=> ({ campanha, sla: Math.round(100*((v.ok/(v.total||1)))) })) })()
+  const inRange = (iso) => { if(!iso) return false; const [y,m,d]=String(iso).split('-').map(Number); if(!y) return false; const dt=new Date(y,m-1,d); const s=toD(filtros.cIni), e=toD(filtros.cFim); if(!s||!e) return true; dt.setHours(0,0,0,0); s.setHours(0,0,0,0); e.setHours(0,0,0,0); return dt>=s && dt<=e }
+  const createdInPeriod = BASE_DEMANDAS_GLOBAL.filter(x=> inRange(x.prazo))
+  const totalCriadas = createdInPeriod.length
+  const totalAndamento = createdInPeriod.filter(x=> { const v=String(x.status||'').toLowerCase(); return isPendingStatus(x.status) || isProdStatus(x.status) || v.includes('feedback') }).length
+  const totalRevisao = createdInPeriod.filter(x=> { const v=String(x.status||'').toLowerCase(); return v.includes('revisar') }).length
+  const totalConcluidas = BASE_DEMANDAS_GLOBAL.filter(x=> isDoneStatus(x.status) && inRange(x.prazo)).length
+  const kpiInconsistencia = (baseTotal>0) && ([totalCriadas,totalAndamento,totalRevisao,totalConcluidas].some(v=> v===0))
+  const statusPeriod = (()=>{ const per={}; createdInPeriod.forEach(x=>{ const s=x.status||'—'; per[s]=(per[s]||0)+1 }); const tot=createdInPeriod.length||1; return Object.entries(per).map(([status,q])=> ({ status, q, pct: Math.round(100*(q/tot)) })).sort((a,b)=> b.q-a.q) })()
+  const designerPeriod = (()=>{ const per={}; createdInPeriod.forEach(x=>{ const d=x.designer||'—'; per[d]=(per[d]||0)+1 }); const tot=createdInPeriod.length||1; return Object.entries(per).map(([designer,q])=> ({ designer, q, pct: Math.round(100*(q/tot)) })).sort((a,b)=> b.q-a.q) })()
+  const tipoPeriod = (()=>{ const per={}; createdInPeriod.forEach(x=>{ const t=x.tipoMidia||'Outro'; per[t]=(per[t]||0)+1 }); const tot=createdInPeriod.length||1; return Object.entries(per).map(([tipo,q])=> ({ tipo, q, pct: Math.round(100*(q/tot)) })).sort((a,b)=> b.q-a.q) })()
+  const funil = (()=>{ const tot=createdInPeriod.length||1; const criadas=createdInPeriod.length; const emAnd=totalAndamento; const revis=totalRevisao; const concl=BASE_DEMANDAS_GLOBAL.filter(x=> isDoneStatus(x.status) && inRange(x.prazo)).length; const pct = (n)=> Math.round(100*(n/Math.max(1,tot))); return [
+    { label:'Criadas', q: criadas, pct: pct(criadas), color:'#4DA3FF' },
+    { label:'Em andamento', q: emAnd, pct: pct(emAnd), color:'#3b82f6' },
+    { label:'Revisão', q: revis, pct: pct(revis), color:'#9B59B6' },
+    { label:'Concluídas', q: concl, pct: pct(concl), color:'#10b981' },
+  ] })()
+  const topAtrasoPeriod = (()=>{ const today=new Date(); today.setHours(0,0,0,0); return createdInPeriod.filter(x=> { if (isDoneStatus(x.status)) return false; if (!x.prazo) return false; const [y,m,d]=String(x.prazo).split('-').map(Number); const dd=new Date(y,m-1,d); dd.setHours(0,0,0,0); return dd<today }).map(x=>{ const [y,m,d]=String(x.prazo).split('-').map(Number); const dd=new Date(y,m-1,d); dd.setHours(0,0,0,0); const late=Math.max(0, Math.round((today-dd)/86400000)); return { ...x, atrasoDias: late } }).sort((a,b)=> b.atrasoDias-a.atrasoDias).slice(0,5) })()
+  const topLeadPeriod = (()=>{ const arr=createdInPeriod.filter(x=> isDoneStatus(x.status)).map(x=> ({ ...x, leadDias: anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)||0 })); return arr.sort((a,b)=> b.leadDias-a.leadDias).slice(0,5) })()
+  const topRevPeriod = createdInPeriod.slice().sort((a,b)=> (b.revisoes||0)-(a.revisoes||0)).slice(0,5)
+  const conclMesAtual = BASE_DEMANDAS_GLOBAL.filter(x=> isDoneStatus(x.status) && inMonth(x.dataConclusao, mesAtual))
+  const conclMesPassado = BASE_DEMANDAS_GLOBAL.filter(x=> isDoneStatus(x.status) && inMonth(x.dataConclusao, mesPassado))
+  const prodAtual = conclMesAtual.length
+  const prodPassado = conclMesPassado.length
+  const slaAtual = (()=>{ const ok=conclMesAtual.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot=conclMesAtual.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })()
+  const slaPassado = (()=>{ const ok=conclMesPassado.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot=conclMesPassado.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })()
+  const leadAtual = (()=>{ const vals=conclMesAtual.map(x=> anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg=(vals.reduce((a,b)=>a+b,0)/(vals.length||1)); return +(avg||0).toFixed(1) })()
+  const leadPassado = (()=>{ const vals=conclMesPassado.map(x=> anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg=(vals.reduce((a,b)=>a+b,0)/(vals.length||1)); return +(avg||0).toFixed(1) })()
+  const retAtual = (()=>{ const tot=conclMesAtual.length||1; const sum=conclMesAtual.reduce((a,x)=> a + (x.revisoes||0), 0); return +(sum/tot).toFixed(2) })()
+  const retPassado = (()=>{ const tot=conclMesPassado.length||1; const sum=conclMesPassado.reduce((a,x)=> a + (x.revisoes||0), 0); return +(sum/tot).toFixed(2) })()
+  const seriesProdPeriod = (()=>{ const days=14; const s=[]; const today=new Date(); for(let i=days-1;i>=0;i--){ const d=new Date(today); d.setDate(d.getDate()-i); const ymd=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; s.push(BASE_DEMANDAS_GLOBAL.filter(x=> String(x.dataConclusao||'')===ymd).length) } return s })()
+  const goDetail = (id)=>{ try{ const found=demandas.find(x=> String(x.id)===String(id)); if(found){ setRoute && setRoute('demandas'); setView && setView('table'); onEdit && onEdit(found) } }catch{} }
+  
+  const daysInPeriodRep = (()=>{ const s=toD(filtros.cIni), e=toD(filtros.cFim); if(!s||!e) return 1; return Math.max(1, Math.round((e - s)/86400000) + 1) })()
+  const ativosPorDesignerPeriod = (()=>{ const per={}; createdInPeriod.forEach(x=>{ if(!isDoneStatus(x.status)){ const d=x.designer||'—'; per[d]=(per[d]||0)+1 } }); return per })()
+  const scorecardData = designers.map(d=> { const mine = createdInPeriod.filter(x=> (x.designer||'—')===d); const concl = mine.filter(x=> isDoneStatus(x.status)); const conclCnt = concl.length; const sla = (()=>{ const ok=concl.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot=concl.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })(); const lead = (()=>{ const vals=concl.map(x=> anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg=(vals.reduce((a,b)=>a+b,0)/(vals.length||1)); return +(avg||0).toFixed(1) })(); const ret = (()=>{ const tot=mine.length||1; const withRev=mine.filter(x=> (x.revisoes||0)>0).length; return Math.round(100*(withRev/Math.max(1,tot))) })(); const ideal=capacityPerDay*daysInPeriodRep; const ativos=ativosPorDesignerPeriod[d]||0; const used = ideal ? Math.min(100, Math.round(100*(ativos/ideal))) : 0; return { designer:d, concl:conclCnt, sla, lead, ret, used } })
+  const [scoreSort, setScoreSort] = useState('concl')
+  const sortedScore = scorecardData.slice().sort((a,b)=> scoreSort==='sla'? (b.sla-a.sla) : scoreSort==='lead'? (a.lead-b.lead) : scoreSort==='ret'? (a.ret-b.ret) : (b.concl-a.concl))
   if (loading) {
     return (
       <div className="reports">
         <div className="reports-toolbar">
           <div className="skeleton row" style={{width:'50%'}}></div>
         </div>
-        <div className="reports-grid">
+  <div className="reports-grid" id="master-report">
+        <div className="report-card">
+          <div className="report-title">Dashboard Analítico 360°</div>
+          <div className="chips">
+            <span className="chip">Total: {total}</span>
+            <span className="chip">SLA: {slaPct}%</span>
+            <span className="chip">Atrasadas: {atrasadasPct}%</span>
+            <span className="chip">Lead médio: {leadMedio}d</span>
+            <span className="chip">Retrabalho médio: {retrabahoMedio ?? retrabalhoMedio}</span>
+            <span className="chip">Capacidade média: {capacidadeMedia}%</span>
+          </div>
+          <div className="section-divider" />
+          <div className="reports-grid">
+            <div className="report-card">
+              <div className="report-title">Distribuições</div>
+              <div className="chips">
+                {distPorDesigner.slice(0,6).map(d=> (<span key={d.designer} className="chip">{d.designer}: {d.pct}%</span>))}
+              </div>
+              <div className="chips">
+                {distPorStatus.slice(0,6).map(s=> (<span key={s.status} className="chip">{s.status}: {s.q}</span>))}
+              </div>
+              <div className="chips">
+                {distPorTipo.slice(0,6).map(t=> (<span key={t.tipo} className="chip">{t.tipo}: {t.q}</span>))}
+              </div>
+              <div className="chips">
+                {distPorCanal.slice(0,6).map(c=> (<span key={c.origem} className="chip">{c.origem}: {c.q}</span>))}
+              </div>
+              <div className="chips">
+                {leadPorDesignerA.slice(0,6).map(r=> (<span key={r.designer} className="chip">{r.designer}: {r.media}d</span>))}
+              </div>
+              <div className="chips">
+                {retrabPorTipoA.slice(0,6).map(r=> (<span key={r.tipo} className="chip">{r.tipo}: {r.porPeca}</span>))}
+              </div>
+            </div>
+            <div className="report-card">
+              <div className="report-title">Alertas Operacionais</div>
+              <div className="section-divider" />
+              <table className="report-matrix">
+                <thead><tr><th>Mais atrasadas</th><th>Designer</th><th>Atraso(d)</th></tr></thead>
+                <tbody>
+                  {topAtraso.map(x=> (<tr key={x.id}><td>{x.titulo}</td><td>{x.designer||'—'}</td><td style={{color:'#FF5E5E'}}>{x.atrasoDias}</td></tr>))}
+                </tbody>
+              </table>
+              <div className="section-divider" />
+              <table className="report-matrix">
+                <thead><tr><th>Maiores lead times</th><th>Designer</th><th>Lead(d)</th></tr></thead>
+                <tbody>
+                  {topLead.map(x=> (<tr key={x.id}><td>{x.titulo}</td><td>{x.designer||'—'}</td><td>{x.leadDias}</td></tr>))}
+                </tbody>
+              </table>
+              <div className="section-divider" />
+              <table className="report-matrix">
+                <thead><tr><th>Mais revisões</th><th>Designer</th><th>Revisões</th></tr></thead>
+                <tbody>
+                  {topRev.map(x=> (<tr key={x.id}><td>{x.titulo}</td><td>{x.designer||'—'}</td><td>{x.revisoes||0}</td></tr>))}
+                </tbody>
+              </table>
+            </div>
+            <div className="report-card">
+              <div className="report-title">Tabela Resumida</div>
+              <div className="section-divider" />
+              <table className="report-matrix">
+                <thead><tr><th>Título</th><th>Designer</th><th>Status</th><th>Prazo</th><th>Atraso(d)</th><th>Lead(d)</th><th>Revisões</th></tr></thead>
+                <tbody>
+                  {items.slice(0, anaLimit).map(it=>{ const atraso = (!isDoneStatus(it.status) && it.prazo && String(it.prazo)<String(hojeISO())) ? (Math.max(0, Math.round((new Date().setHours(0,0,0,0) - toD(it.prazo).setHours(0,0,0,0))/86400000))) : 0; const lead = (isDoneStatus(it.status) ? (anaDiffDays(it.dataCriacao||it.dataSolicitacao, it.dataConclusao)||0) : null); return (
+                    <tr key={it.id} className="row-clickable" onClick={()=>{ try{ document.getElementById('master-report')?.scrollIntoView({ behavior:'smooth' }) }catch{} }}>
+                      <td>{it.titulo||'(sem título)'}</td>
+                      <td>{it.designer||'—'}</td>
+                      <td>{it.status||'—'}</td>
+                      <td>{it.prazo||'—'}</td>
+                      <td style={{color: atraso>0?'#FF5E5E':'var(--muted)'}}>{atraso||0}</td>
+                      <td>{lead!=null?lead:'—'}</td>
+                      <td>{it.revisoes||0}</td>
+                    </tr>
+                  ) })}
+                </tbody>
+              </table>
+              <div className="table-footer">
+                {items.length>anaLimit && <button className="primary" type="button" onClick={()=> setAnaLimit(l=> Math.min(l+10, items.length))}>Mostrar mais</button>}
+                {anaLimit>10 && <button className="tertiary" type="button" onClick={()=> setAnaLimit(10)}>Mostrar menos</button>}
+              </div>
+            </div>
+          </div>
+        </div>
           {Array.from({length:3}).map((_,i)=> (<div key={i} className="skeleton card" style={{height:180}}></div>))}
         </div>
       </div>
     )
   }
+  const inconsistencia = (baseTotal>0 && items.length===0)
   return (
-    <div className="reports">
+    <div className="reports" data-loading={loading?'true':'false'}>
       <div className="reports-toolbar">
         <div className="chips">
-          {periodLabel.map(lbl=> (
-            <button key={lbl} className={`btn-md ${period===keyOf(lbl)?'active':''}`} onClick={()=> setPeriod(keyOf(lbl))}><span className="icon"><Icon name="calendar" /></span><span>{lbl}</span></button>
-          ))}
           <div className="date-pill">
             <span className="icon"><Icon name="calendar" /></span>
             <input type="date" value={filtros.cIni||''} onChange={e=> setFiltros(prev=> ({ ...prev, cIni: e.target.value }))} />
@@ -2224,171 +2484,383 @@ function ReportsView({ demandas, items, designers, filtros, setFiltros, loading 
           {designersKeys.map(d=> (
             <button key={d} className={`btn-md ${((filtros.designer||'')===d || (d==='Todos' && !filtros.designer))?'active':''}`} onClick={()=> setDesigner(d)}><span className="icon"><Icon name="usuarios" /></span><span>{d}</span></button>
           ))}
-          {tiposKeys.map(t=> (
-            <button key={t} className={`btn-md ${((filtros.tipoMidia||'')===t || (t==='Todos' && !filtros.tipoMidia))?'active':''}`} onClick={()=> setTipo(t)}><span className="icon"><Icon name="tag" /></span><span>{t}</span></button>
-          ))}
-          {canaisKeys.map(c=> (
-            <button key={c} className={`btn-md ${((filtros.origem||'')===c || (c==='Todos' && !filtros.origem))?'active':''}`} onClick={()=> setCanal(c)}><span className="icon"><Icon name="link" /></span><span>{c}</span></button>
-          ))}
-          {campanhasKeys.map(c=> (
-            <button key={c} className={`btn-md ${((filtros.campanha||'')===c || (c==='Todos' && !filtros.campanha))?'active':''}`} onClick={()=> setCampanha(c)}><span className="icon"><Icon name="tag" /></span><span>{c}</span></button>
-          ))}
-          {statusKeys.map(s=> (
-            <button key={s} className={`btn-md ${((filtros.status||'')===s || (s==='Todos' && !filtros.status))?'active':''}`} onClick={()=> setStatus(s)}><span className="icon"><Icon name="dot" /></span><span>{s}</span></button>
-          ))}
         </div>
       </div>
-      <div className="reports-grid">
+      
+      <div className="reports-stack" style={{display:'block'}}>
         <div className="report-card">
+          <div className="report-title">Resumo Geral das Demandas</div>
+          <div className="kpi-grid" style={{display:'grid',gridTemplateColumns:'repeat(6, minmax(160px, 1fr))',gap:16}}>
+            <div className="kpi-card" style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:24,border:'1px solid var(--border)',borderRadius:12,height:160,overflow:'hidden',whiteSpace:'nowrap'}}>
+              <div className="icon" style={{fontSize:20}}>📌</div>
+              <div className="kpi-number" style={{fontSize:28,fontWeight:700}}><CountUp value={totalCriadas} /></div>
+              <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:12}}>Período selecionado</div>
+            </div>
+            <div className="kpi-card" style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:24,border:'1px solid var(--border)',borderRadius:12,height:160,overflow:'hidden',whiteSpace:'nowrap'}}>
+              <div className="icon" style={{fontSize:20}}>⏳</div>
+              <div className="kpi-number" style={{fontSize:28,fontWeight:700}}><CountUp value={totalAndamento} /></div>
+              <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:12}}>Período selecionado</div>
+            </div>
+            <div className="kpi-card" style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:24,border:'1px solid var(--border)',borderRadius:12,height:160,overflow:'hidden',whiteSpace:'nowrap'}}>
+              <div className="icon" style={{fontSize:20}}>🛠</div>
+              <div className="kpi-number" style={{fontSize:28,fontWeight:700}}><CountUp value={totalRevisao} /></div>
+              <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:12}}>Período selecionado</div>
+            </div>
+            <div className="kpi-card" style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:24,border:'1px solid var(--border)',borderRadius:12,height:160,overflow:'hidden',whiteSpace:'nowrap'}}>
+              <div className="icon" style={{fontSize:20}}>✅</div>
+              <div className="kpi-number" style={{fontSize:28,fontWeight:700}}><CountUp value={totalConcluidas} /></div>
+              <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:12}}>Período selecionado</div>
+            </div>
+            <div className="kpi-card" style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:24,border:'1px solid var(--border)',borderRadius:12,height:160,overflow:'hidden',whiteSpace:'nowrap'}}>
+              <div className="icon" style={{fontSize:20}}>📈</div>
+              <div className="kpi-number" style={{fontSize:28,fontWeight:700}}><CountUp value={slaPct} suffix="%" /></div>
+              <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:12}}>SLA geral</div>
+            </div>
+            <div className="kpi-card" style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:24,border:'1px solid var(--border)',borderRadius:12,height:160,overflow:'hidden',whiteSpace:'nowrap'}}>
+              <div className="icon" style={{fontSize:20}}>⏱</div>
+              <div className="kpi-number" style={{fontSize:28,fontWeight:700}}><CountUp value={leadMedio} suffix="d" /></div>
+              <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:12}}>Lead Time médio</div>
+            </div>
+          </div>
+
+        </div>
+        <div className="report-card" style={{gridColumn:'1',padding:24,borderRadius:8,boxShadow:'0 6px 16px rgba(0,0,0,0.12)'}}>
+          <div className="report-title">Funil de Status</div>
+          <div className="section-divider" />
+          <div>
+            {funil.map((s,i)=> (
+              <div key={i} style={{display:'flex',alignItems:'center',gap:8,margin:'6px 0'}}>
+                <div style={{minWidth:140,color:'var(--muted)'}}>{s.label}</div>
+                <div style={{flex:1,background:'#222',borderRadius:6,overflow:'hidden'}} title={`${s.label}: ${s.q} (${s.pct}%)`}>
+                  <BarFill pct={s.pct} color={s.color} height={14} />
+                </div>
+                <div style={{minWidth:80,textAlign:'right'}}>{s.q} • {s.pct}%</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="report-card" style={{gridColumn:'2',padding:24,borderRadius:8,boxShadow:'0 6px 16px rgba(0,0,0,0.12)'}}>
+          <div className="report-title">Scorecard por Designer</div>
+          <div className="section-divider" />
+          <table className="report-matrix" style={{whiteSpace:'nowrap',tableLayout:'fixed',width:'100%'}}>
+            <thead><tr><th>Designer</th><th>Concluídas</th><th>SLA %</th><th>Lead Time(d)</th><th>Retrabalho %</th></tr></thead>
+            <tbody>
+              {sortedScore.map(r=> (
+                <tr key={r.designer}><td>{r.designer}</td><td>{r.concl}</td><td style={{color:r.sla>=90?'#00C58E': r.sla>=70?'#FFE55C':'#FF5E5E'}}>{r.sla}</td><td style={{color:r.lead<=2?'#00C58E':'var(--muted)'}}>{r.lead}</td><td>{r.ret>=30? (<span style={{background:'#FF5E5E22',color:'#FF5E5E',padding:'2px 6px',borderRadius:8}}>{r.ret}%</span>) : (<span>{r.ret}%</span>)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        
+        
+        
+        
+        <div className="report-card" style={{gridColumn:'2',padding:24,borderRadius:8,boxShadow:'0 6px 16px rgba(0,0,0,0.12)'}}>
+          <div className="report-title">Visualizações</div>
+          <div className="section-divider" />
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3, 1fr)',gap:16}}>
+            <div>
+              <div className="widget-title">Demandas por Status</div>
+              {(()=>{ const segs = statusPeriod.slice(0,6).map(s=> { const v=String(s.status||'').toLowerCase(); const color = v.includes('pendente')||v.includes('aberta')?'#f59e0b': v.includes('progresso')||v.includes('produção')?'#3b82f6': v.includes('feedback')?'#FFE55C': v.includes('revis')?'#9B59B6': v.includes('aprov')||v.includes('conclu')?'#10b981':'#4DA3FF'; return { pct:s.pct, color, label:`${s.status} ${s.q}` } }); return (
+                <div>
+                  <div className="stacked-bar" style={{display:'flex',height:18,overflow:'hidden',borderRadius:6}}>
+                    {segs.map((s,i)=> (<div key={i} style={{width:`${s.pct}%`,background:s.color}} title={s.label} />))}
+                  </div>
+                  <div className="pie-legend" style={{marginTop:8}}>
+                    {segs.map((s,i)=> (<div key={i} className="legend-item"><span className="legend-dot" style={{background:s.color}} />{s.label}</div>))}
+                  </div>
+                </div>
+              ) })()}
+            </div>
+            <div>
+              <div className="widget-title">Demandas por Designer</div>
+              <div>
+                {designerPeriod.slice(0,6).map(d=> (
+                  <div key={d.designer} className="bar-row" style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+                    <div style={{minWidth:80,color:'var(--muted)'}}>{d.designer}</div>
+                    <div style={{flex:1,background:'#222',borderRadius:6,overflow:'hidden'}} title={`${d.designer}: ${d.q}`}>
+                      <div style={{width:`${d.pct}%`,height:12,background:'#4DA3FF'}} />
+                    </div>
+                    <div style={{minWidth:28,textAlign:'right'}}>{d.q}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="widget-title">Demandas por Tipo</div>
+              <div>
+                {tipoPeriod.slice(0,6).map(t=> (
+                  <div key={t.tipo} className="bar-row" style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+                    <div style={{minWidth:80,color:'var(--muted)'}}>{t.tipo}</div>
+                    <div style={{flex:1,background:'#222',borderRadius:6,overflow:'hidden'}} title={`${t.tipo}: ${t.q}`}>
+                      <div style={{width:`${t.pct}%`,height:12,background:'#9B59B6'}} />
+                    </div>
+                    <div style={{minWidth:28,textAlign:'right'}}>{t.q}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="report-card" style={{padding:24,borderRadius:8,boxShadow:'0 6px 16px rgba(0,0,0,0.12)'}}>
           <div className="report-title">Relatório de Backlog</div>
-          <div className="chips">
-            <span className="chip">Backlog total: {backlogItems.length}</span>
-            <span className="chip">Em risco (≤48h): {backlogRisco.length}</span>
-            <span className="chip">Prazo médio: {prazoMedioBacklog}d</span>
-            <span className="chip">Estado: {estadoBacklog}</span>
-          </div>
           <div className="section-divider" />
-          <table className="report-matrix">
-            <thead><tr><th>Tipo</th><th>Qtd</th></tr></thead>
-            <tbody>
-              {Object.entries(backlogItems.reduce((m,x)=>{ const t=x.tipoMidia||'Outro'; m[t]=(m[t]||0)+1; return m },{})).map(([tipo,q])=> (<tr key={tipo}><td>{tipo}</td><td>{q}</td></tr>))}
-            </tbody>
-          </table>
-          <div className="section-divider" />
-          <table className="report-matrix">
-            <thead><tr><th>Designer</th><th>Qtd</th></tr></thead>
-            <tbody>
-              {Object.entries(backlogItems.reduce((m,x)=>{ const d=x.designer||'—'; m[d]=(m[d]||0)+1; return m },{})).map(([designer,q])=> (<tr key={designer}><td>{designer}</td><td>{q}</td></tr>))}
-            </tbody>
-          </table>
-        </div>
-        <div className="report-card">
-          <div className="report-title">Relatório de Lead Time</div>
-          <div className="chips">
-            <span className="chip">Médio geral: {leadTimeMedio}d</span>
-            <span className="chip">Este mês: {compMesAtual}d</span>
-            <span className="chip">Mês passado: {compMesPassado}d</span>
-          </div>
-          <div className="section-divider" />
-          <table className="report-matrix">
-            <thead><tr><th>Tipo</th><th>Lead Time médio</th></tr></thead>
-            <tbody>
-              {leadPorTipo.map(r=> (<tr key={r.tipo}><td>{r.tipo}</td><td>{r.media}d</td></tr>))}
-            </tbody>
-          </table>
-          <div className="section-divider" />
-          <table className="report-matrix">
-            <thead><tr><th>Designer</th><th>Lead Time médio</th></tr></thead>
-            <tbody>
-              {leadPorDesigner.map(r=> (<tr key={r.designer}><td>{r.designer}</td><td>{r.media}d</td></tr>))}
-            </tbody>
-          </table>
-          <div className="section-divider" />
-          <div className="chips">
-            <span className="chip">Designer A</span>
-            <select value={desA} onChange={e=> setDesA(e.target.value)}>{designers.map(d=> <option key={d} value={d}>{d}</option>)}</select>
-            <span className="chip">Designer B</span>
-            <select value={desB} onChange={e=> setDesB(e.target.value)}>{designers.map(d=> <option key={d} value={d}>{d}</option>)}</select>
-            <span className="chip">A: {ltDesigner(desA)}d</span>
-            <span className="chip">B: {ltDesigner(desB)}d</span>
-          </div>
-        </div>
-        <div className="report-card">
-          <div className="report-title">Eficiência e Retrabalho</div>
-          <div className="chips">
-            <span className="chip">Sem revisão: {revDistrib.sRev}%</span>
-            <span className="chip">1 revisão: {revDistrib.umaRev}%</span>
-            <span className="chip">2+ revisões: {revDistrib.duasMais}%</span>
-          </div>
-          <div className="section-divider" />
-          <table className="report-matrix">
-            <thead><tr><th>Designer</th><th>Revisões/peça</th></tr></thead>
-            <tbody>
-              {retrabalhoPorDesigner.map(r=> (<tr key={r.designer}><td>{r.designer}</td><td>{r.porPeca}</td></tr>))}
-            </tbody>
-          </table>
-          <div className="section-divider" />
-          <table className="report-matrix">
-            <thead><tr><th>Tipo</th><th>Revisões/peça</th></tr></thead>
-            <tbody>
-              {retrabalhoPorTipo.map(r=> (<tr key={r.tipo}><td>{r.tipo}</td><td>{r.porPeca}</td></tr>))}
-            </tbody>
-          </table>
-        </div>
-        <div className="report-card">
-          <div className="report-title">Demanda por Canal</div>
-          <div className="chips">
-            {porCanal.map(c=> (<span key={c.origem} className="chip">{c.origem}: {c.pct}%</span>))}
-          </div>
-          <div className="section-divider" />
-          {(()=>{ const total = porCanal.reduce((a,b)=> a+b.q,0)||1; let start=0; const r=50; const cx=60, cy=60; const segs = porCanal.slice(0,5).map((c,i)=>{ const frac=c.q/total; const a0=start*2*Math.PI; const a1=(start+frac)*2*Math.PI; start+=frac; const x0=cx + r*Math.cos(a0); const y0=cy + r*Math.sin(a0); const x1=cx + r*Math.cos(a1); const y1=cy + r*Math.sin(a1); const large = frac>0.5 ? 1 : 0; const path = `M ${cx} ${cy} L ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x1} ${y1} Z`; const colors=['#4DA3FF','#BCD200','#FF5E5E','#9B59B6','#2ECC71']; return { path, color: colors[i%colors.length], label: `${c.origem} ${c.pct}%` } }); return (
-            <div className="pie-wrap">
-              <svg width="140" height="140" className="pie-chart">
-                {segs.map((s,i)=> (<path key={i} d={s.path} fill={s.color} />))}
-              </svg>
-              <div className="pie-legend">
-                {segs.map((s,i)=> (<div key={i} className="legend-item"><span className="legend-dot" style={{background:s.color}} />{s.label}</div>))}
+          {(()=>{ const emAndamento = backlogItems.filter(x=> { const v=String(x.status||'').toLowerCase(); return isProdStatus(x.status) || v.includes('feedback') }).length; const emRevisao = backlogItems.filter(x=> String(x.status||'').toLowerCase().includes('revis')).length; const slaEstourado = backlogItems.filter(x=> { const dl=diasRestantes(x.prazo); return dl!=null && dl<0 }).length; return (
+            <div className="kpi-grid" style={{display:'grid',gridTemplateColumns:'repeat(3, minmax(160px, 1fr))',gap:16}}>
+              <div className="kpi-card" style={{padding:24,border:'1px solid var(--border)',borderRadius:12,height:160,overflow:'hidden',whiteSpace:'nowrap'}}>
+                <div className="kpi-number" style={{fontSize:28,fontWeight:700}}>{emAndamento}</div>
+                <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:12}}>Em andamento</div>
+                <div style={{marginTop:8,color: emAndamento===0?'var(--status-success)':'var(--status-warning)'}}>{emAndamento===0?'Controlado':'Atenção'}</div>
+              </div>
+              <div className="kpi-card" style={{padding:24,border:'1px solid var(--border)',borderRadius:12,height:160,overflow:'hidden',whiteSpace:'nowrap'}}>
+                <div className="kpi-number" style={{fontSize:28,fontWeight:700}}>{emRevisao}</div>
+                <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:12}}>Em revisão</div>
+                <div style={{marginTop:8,color: emRevisao===0?'var(--status-success)':'var(--status-warning)'}}>{emRevisao===0?'Controlado':'Atenção'}</div>
+              </div>
+              <div className="kpi-card" style={{padding:24,border:'1px solid var(--border)',borderRadius:12,height:160,overflow:'hidden',whiteSpace:'nowrap'}}>
+                <div className="kpi-number" style={{fontSize:28,fontWeight:700}}>{slaEstourado}</div>
+                <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:12}}>SLA estourado</div>
+                <div style={{marginTop:8,color: slaEstourado===0?'var(--status-success)':'var(--status-danger)'}}>{slaEstourado===0?'Controlado':'Crítico'}</div>
               </div>
             </div>
           ) })()}
-          <table className="report-matrix">
-            <thead><tr><th>Canal</th><th>Revisões/peça</th></tr></thead>
-            <tbody>
-              {retrabPorCanal.map(c=> (<tr key={c.origem}><td>{c.origem}</td><td>{c.porPeca}</td></tr>))}
-            </tbody>
-          </table>
-          <div className="section-divider" />
-          <table className="report-matrix">
-            <thead><tr><th>Canal</th><th>Concluídas</th></tr></thead>
-            <tbody>
-              {prodPorCanal.map(c=> (<tr key={c.origem}><td>{c.origem}</td><td>{c.q}</td></tr>))}
-            </tbody>
-          </table>
         </div>
         <div className="report-card">
-          <div className="report-title">Produtividade por Hora (Avançado)</div>
-          <div className="chips">
-            <span className="chip">Tempo médio real/peça: {tempoMedioReal}h</span>
+          <div className="report-title">O que aprendemos neste período</div>
+          <div className="insights-grid">
+            {(()=>{ const now=new Date(); const start=new Date(now.getFullYear(), now.getMonth(), 1); const end=new Date(now.getFullYear(), now.getMonth()+1, 0); const toD=s=>{ if(!s) return null; const [y,m,d]=String(s).split('-').map(Number); if(!y) return null; return new Date(y,m-1,d) }; const inM=dt=>{ if(!dt) return false; dt.setHours(0,0,0,0); return dt>=start && dt<=end }; const concl = items.filter(x=> isDoneStatus(x.status) && inM(toD(x.dataConclusao))); const bestSla = (()=>{ const per={}; concl.forEach(x=>{ const d=x.designer||'—'; const ok=x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo; const tot=x.prazo && x.dataConclusao; const cur=per[d]||{ok:0,total:0}; per[d]={ ok:cur.ok+(ok?1:0), total:cur.total+(tot?1:0) } }); const arr=Object.entries(per).map(([designer,v])=> ({designer, pct: Math.round(100*((v.ok/(v.total||1)))) })); return arr.sort((a,b)=> b.pct-a.pct)[0] })(); const tipagem=(()=>{ const m={}; items.forEach(x=>{ const t=x.tipoMidia||'—'; m[t]=(m[t]||0)+1 }); const arr=Object.entries(m).map(([tipo,q])=>({tipo,q})).sort((a,b)=> b.q-a.q); const tot=arr.reduce((a,b)=>a+b.q,0)||1; const top=arr[0]; return top? { tipo: top.tipo, pct: Math.round(100*(top.q/tot)) } : null })(); const semAtraso = items.filter(x=> !isDoneStatus(x.status) && x.prazo && String(x.prazo)< String(hojeISO())).length===0; const capacidadeMedia = (()=>{ const capacityPerDay=4; const designersCount=designers.length||1; const ds = items.map(x=> toD(x.dataCriacao||x.dataSolicitacao)).filter(Boolean).sort((a,b)=> a-b); const days = ds.length? Math.max(1, Math.round((ds[ds.length-1]-ds[0])/86400000)+1) : 1; const ideal=designersCount*capacityPerDay*days; const conclQt=items.filter(x=> isDoneStatus(x.status)).length; return Math.round(100*(conclQt/Math.max(1,ideal))) })(); const list=[]; if (capacidadeMedia>=80) list.push({ msg:`Capacidade média do time está em ${capacidadeMedia}%`, act:'Considere redistribuir demandas.' }); else list.push({ msg:`Capacidade média do time está em ${capacidadeMedia}%`, act:'Antecipe demandas futuras.' }); if(semAtraso) list.push({ msg:'Nenhuma demanda apresentou atraso.', act:'Mantenha o ritmo atual de capacidade.' }); if(bestSla) list.push({ msg:`O designer ${bestSla.designer} teve o melhor SLA do período.`, act:'Priorize peças complexas com ele.' }); if(tipagem) list.push({ msg:`${tipagem.tipo} representa ${tipagem.pct}% das demandas.`, act:`Ajuste prioridades para ${tipagem.tipo}.` }); return list.slice(0,3) })().map((t,i)=> (
+              <div key={i} className="insight-card"><div className="insight-ico">★</div><div className="insight-text">{t.msg}</div><div className="insight-text" style={{color:'var(--muted)'}}>👉 {t.act}</div></div>
+            ))}
           </div>
-          <div className="section-divider" />
-          <div className="heatmap">
-            <div className="heat-row" style={{gap:6,color:'var(--muted)'}}>
-              {Array.from({length:11},(_,i)=> i+8).map(h=> (<div key={h} style={{width:24,textAlign:'center'}}>{String(h).padStart(2,'0')}h</div>))}
-            </div>
-            <div className="heat-row">
-              {Array.from({length:11},(_,i)=> i+8).map(h=> { const v=porHora[h]||0; const color=v===0?'#222': v<2?'#00C58E33':'#00C58E'; return (<div key={h} className="heat-cell" style={{background:color}} title={`${String(h).padStart(2,'0')}h: ${v}`} />) })}
-            </div>
-          </div>
-          <div className="section-divider" />
-          <table className="report-matrix">
-            <thead><tr><th>#</th><th>Designer</th><th>Velocidade média (h)</th></tr></thead>
-            <tbody>
-              {velocidadeRanking.map((r,i)=> (<tr key={r.designer}><td>{i+1}</td><td>{r.designer}</td><td>{r.horas}</td></tr>))}
-            </tbody>
-          </table>
-          <div className="section-divider" />
-          <table className="report-matrix">
-            <thead><tr><th>#</th><th>Designer</th><th>Qualidade (menos retrabalho)</th></tr></thead>
-            <tbody>
-              {qualidadeRanking.map((r,i)=> (<tr key={r.designer}><td>{i+1}</td><td>{r.designer}</td><td>{r.porPeca}</td></tr>))}
-            </tbody>
-          </table>
         </div>
-        <div className="report-card">
-          <div className="report-title">Relatório de Campanhas</div>
-          <div className="chips">
-            <span className="chip">Mais demandada: {porCampanha[0]?.campanha||'—'}</span>
-            <span className="chip">Maior retrabalho: {retrabCampanha[0]?.campanha||'—'}</span>
-            <span className="chip">Melhor SLA: {slaCampanha.sort((a,b)=> b.sla-a.sla)[0]?.campanha||'—'}</span>
-          </div>
-          <div className="section-divider" />
-          <table className="report-matrix">
-            <thead><tr><th>Campanha</th><th>Produção (concluídas)</th><th>SLA%</th><th>Retrabalho/peça</th></tr></thead>
-            <tbody>
-              {Array.from(new Set(items.map(x=> x.campanha).filter(Boolean))).map(c=> { const prod=concluidos.filter(x=> x.campanha===c).length; const sla=slaCampanha.find(x=> x.campanha===c)?.sla||0; const ret=retrabCampanha.find(x=> x.campanha===c)?.porPeca||0; return (<tr key={c}><td>{c}</td><td>{prod}</td><td style={{color:sla>=90?'#BCD200': sla>=70?'#FFE55C':'#FF5E5E'}}>{sla}%</td><td>{ret}</td></tr>) })}
-            </tbody>
-          </table>
+        
+        
+      </div>
+    </div>
+  )
+}
+
+function CountUp({ value, duration=200, suffix='' }) {
+  const [display, setDisplay] = React.useState(0)
+  React.useEffect(()=>{
+    const start = Number(display)||0
+    const end = Number(value)||0
+    const delta = end - start
+    const t0 = performance.now()
+    let raf
+    const step = (ts)=>{
+      const p = Math.min(1, (ts - t0)/(duration||200))
+      const v = start + (delta * p)
+      setDisplay(v)
+      if (p<1) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return ()=>{ try{ cancelAnimationFrame(raf) }catch{} }
+  },[value,duration])
+  const shown = Math.round(Number(display)||0)
+  return React.createElement('span', null, `${shown}${suffix}`)
+}
+
+function BarFill({ pct, color, height=18 }) {
+  const [w, setW] = React.useState(0)
+  React.useEffect(()=>{ const id=setTimeout(()=> setW(Math.max(0,Math.min(100, pct||0))), 10); return ()=> clearTimeout(id) },[pct])
+  return (<div style={{width:`${w}%`,height,background:color}} />)
+}
+
+function ExecutiveDashboardView({ demandas, designers, filtros, setFiltros, loading, user, onEdit, setRoute, setView }) {
+  const isAdmin = (user?.role==='admin')
+  const username = user?.username||''
+  const BASE_DEMANDAS_GLOBAL = useMemo(()=> Array.isArray(demandas) ? demandas : [], [demandas])
+  const designersKeys = ['Todos', ...designers]
+  const statusKeys = useMemo(()=> ['Todos', ...Array.from(new Set(BASE_DEMANDAS_GLOBAL.map(x=> x.status||'—'))).filter(Boolean)], [BASE_DEMANDAS_GLOBAL])
+  const tipoKeys = useMemo(()=> ['Todos', ...Array.from(new Set(BASE_DEMANDAS_GLOBAL.map(x=> x.tipoMidia||'—'))).filter(Boolean)], [BASE_DEMANDAS_GLOBAL])
+  const setDesigner = (v) => setFiltros(prev=> ({ ...prev, designer: v==='Todos'?'':v }))
+  const setStatus = (v) => setFiltros(prev=> ({ ...prev, status: v==='Todos'?'':v }))
+  const setTipo = (v) => setFiltros(prev=> ({ ...prev, tipoMidia: v==='Todos'?'':v }))
+  const periodLabel = ['Hoje','Semana','Mês','Mês passado']
+  const keyOf = s => s==='Hoje'?'today': s==='Semana'?'week': s==='Mês'?'month':'lastmonth'
+  const [period, setPeriod] = useState('month')
+  useEffect(()=>{
+    const d = new Date()
+    const toYMD = x => { const p = n=>String(n).padStart(2,'0'); return `${x.getFullYear()}-${p(x.getMonth()+1)}-${p(x.getDate())}` }
+    const startOfISOWeek = (ref) => { const r = new Date(ref); const day = r.getDay()||7; r.setDate(r.getDate() - (day-1)); return new Date(r.getFullYear(), r.getMonth(), r.getDate()) }
+    const endOfISOWeek = (ref) => { const s = startOfISOWeek(ref); const e = new Date(s); e.setDate(e.getDate()+6); return e }
+    const startOfMonth = new Date(d.getFullYear(), d.getMonth(), 1)
+    const endOfMonth = new Date(d.getFullYear(), d.getMonth()+1, 0)
+    const startOfLastMonth = new Date(d.getFullYear(), d.getMonth()-1, 1)
+    const endOfLastMonth = new Date(d.getFullYear(), d.getMonth(), 0)
+    if (period==='today') setFiltros(prev=>({ ...prev, cIni: toYMD(d), cFim: toYMD(d) }))
+    if (period==='week') { const s=startOfISOWeek(d), e=endOfISOWeek(d); setFiltros(prev=>({ ...prev, cIni: toYMD(s), cFim: toYMD(e) })) }
+    if (period==='month') setFiltros(prev=>({ ...prev, cIni: toYMD(startOfMonth), cFim: toYMD(endOfMonth) }))
+    if (period==='lastmonth') setFiltros(prev=>({ ...prev, cIni: toYMD(startOfLastMonth), cFim: toYMD(endOfLastMonth) }))
+  },[period])
+  const toD = (s)=>{ if(!s) return null; const [y,m,d]=String(s).split('-').map(Number); if(!y) return null; return new Date(y,m-1,d) }
+  const inRange = (iso) => { if(!iso) return false; const [y,m,d]=String(iso).split('-').map(Number); if(!y) return false; const dt=new Date(y,m-1,d); const s=toD(filtros.cIni), e=toD(filtros.cFim); if(!s||!e) return true; dt.setHours(0,0,0,0); s.setHours(0,0,0,0); e.setHours(0,0,0,0); return dt>=s && dt<=e }
+  const passesFilters = (x)=> inRange(x.prazo)
+  const arr = BASE_DEMANDAS_GLOBAL.filter(passesFilters)
+  const createdInPeriod = arr
+  const totalCriadas = createdInPeriod.length
+  const totalAndamento = createdInPeriod.filter(x=> { const v=String(x.status||'').toLowerCase(); return isPendingStatus(x.status) || isProdStatus(x.status) || v.includes('feedback') }).length
+  const totalRevisao = createdInPeriod.filter(x=> { const v=String(x.status||'').toLowerCase(); return v.includes('revisar') }).length
+  const totalConcluidas = BASE_DEMANDAS_GLOBAL.filter(x=> isDoneStatus(x.status) && inRange(x.prazo)).length
+  const diasRestantes = (p)=>{ if(!p) return null; const [y,m,d]=String(p).split('-').map(Number); const end=new Date(y,(m||1)-1,(d||1)); const start=new Date(); start.setHours(0,0,0,0); end.setHours(0,0,0,0); return Math.round((end - start)/86400000) }
+  const backlogRisco = createdInPeriod.filter(x=> { const dl=diasRestantes(x.prazo); return !isDoneStatus(x.status) && dl!=null && dl<=2 }).length
+  const anaDiffDays = (a,b)=>{ const da=toD(a), db=toD(b); if(!da||!db) return null; return Math.max(0, Math.round((db-da)/86400000)) }
+  const concluidos = BASE_DEMANDAS_GLOBAL.filter(x=> passesFilters(x) && isDoneStatus(x.status))
+  const slaGeralPct = (()=>{ const ok=concluidos.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot=concluidos.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })()
+  const leadMedio = (()=>{ const vals=concluidos.map(x=> anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg=(vals.reduce((a,b)=>a+b,0)/(vals.length||1)); return +(avg||0).toFixed(1) })()
+  const retrabalhoPct = (()=>{ const tot=concluidos.length||1; const com=concluidos.filter(x=> (x.revisoes||0)>0).length; return Math.round(100*(com/Math.max(1,tot))) })()
+  const funil = (()=>{ const tot=createdInPeriod.length||1; const criadas=totalCriadas; const emProd=totalAndamento; const revis=totalRevisao; const concl=totalConcluidas; const pct = (n)=> Math.round(100*(n/Math.max(1,tot))); return [
+    { label:'Criadas', q: criadas, pct: pct(criadas), color:'var(--status-info)' },
+    { label:'Em Produção', q: emProd, pct: pct(emProd), color:'var(--text-muted)' },
+    { label:'Em Revisão', q: revis, pct: pct(revis), color:'var(--status-warning)' },
+    { label:'Concluídas', q: concl, pct: pct(concl), color:'var(--status-success)' },
+  ] })()
+  const capacityPerDay = 4
+  const daysInPeriod = (()=>{ const s=toD(filtros.cIni), e=toD(filtros.cFim); if(!s||!e) return 1; return Math.max(1, Math.round((e - s)/86400000) + 1) })()
+  const ativosPorDesigner = (()=>{ const per={}; createdInPeriod.forEach(x=>{ if(!isDoneStatus(x.status)){ const d=x.designer||'—'; per[d]=(per[d]||0)+1 } }); return per })()
+  const designersCount = isAdmin ? (designers.length||1) : 1
+  const ativosTotal = createdInPeriod.filter(x=> !isDoneStatus(x.status)).length
+  const idealTotal = capacityPerDay * daysInPeriod * designersCount
+  const teamUsedPct = idealTotal ? Math.min(100, Math.round(100*(ativosTotal/idealTotal))) : 0
+  const scorecardData = (isAdmin? designers : [username]).map(d=> { const mine = createdInPeriod.filter(x=> (x.designer||'—')===d); const concl = concluidos.filter(x=> (x.designer||'—')===d); const conclCnt = concl.length; const sla = (()=>{ const ok=concl.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot=concl.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })(); const lead = (()=>{ const vals=concl.map(x=> anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg=(vals.reduce((a,b)=>a+b,0)/(vals.length||1)); return +(avg||0).toFixed(1) })(); const ret = (()=>{ const tot=mine.length||1; const withRev=mine.filter(x=> (x.revisoes||0)>0).length; return Math.round(100*(withRev/Math.max(1,tot))) })(); const ideal=capacityPerDay*daysInPeriod; const ativos=ativosPorDesigner[d]||0; const used = ideal ? Math.min(100, Math.round(100*(ativos/ideal))) : 0; return { designer:d, concl:conclCnt, sla, lead, ret, used } })
+  const sortedScore = scorecardData.slice().sort((a,b)=> b.sla!==a.sla? (b.sla-a.sla) : b.concl!==a.concl? (b.concl-a.concl) : b.ret!==a.ret? (a.ret-b.ret) : (a.lead-b.lead))
+  const designerKeysForPeriod = isAdmin ? designers : [username]
+  const topAtraso = (()=>{ const map={}; createdInPeriod.forEach(x=>{ if(!isDoneStatus(x.status) && x.prazo && String(x.prazo)<String(hojeISO())){ const d=x.designer||'—'; map[d]=(map[d]||0)+1 } }); const arr=Object.entries(map).map(([designer,q])=>({designer,q})).sort((a,b)=> b.q-a.q); return arr[0]||null })()
+  const topLead = (()=>{ const per={}; designerKeysForPeriod.forEach(d=>{ const concl = concluidos.filter(x=> (x.designer||'—')===d && inRange(x.prazo)); const vals=concl.map(x=> anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg = vals.length ? +(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1) : null; if(avg!=null) per[d]=avg }); const arr=Object.entries(per).map(([designer,lead])=>({designer,lead})).sort((a,b)=> b.lead-a.lead); return arr[0]||null })()
+  const topRet = (()=>{ const per={}; designerKeysForPeriod.forEach(d=>{ const mine = createdInPeriod.filter(x=> (x.designer||'—')===d); const avg = mine.length ? +(mine.reduce((a,x)=> a+(x.revisoes||0),0)/mine.length).toFixed(2) : null; if(avg!=null) per[d]=avg }); const arr=Object.entries(per).map(([designer,ret])=>({designer,ret})).sort((a,b)=> b.ret-a.ret); return arr[0]||null })()
+  const noDateFilter = (x)=> (
+    (isAdmin ? (filtros.designer? (x.designer||'')===filtros.designer : true) : ((x.designer||'')===username)) &&
+    (filtros.status? (x.status||'')===filtros.status : true) &&
+    (filtros.tipoMidia? (x.tipoMidia||'')===filtros.tipoMidia : true) &&
+    (filtros.origem? (x.origem||'')===filtros.origem : true) &&
+    (filtros.campanha? (x.campanha||'')===filtros.campanha : true)
+  )
+  const itemsCmp = BASE_DEMANDAS_GLOBAL.filter(noDateFilter)
+  const curStart = toD(filtros.cIni), curEnd = toD(filtros.cFim)
+  const daysRange = (curStart && curEnd) ? (Math.max(1, Math.round((curEnd - curStart)/86400000) + 1)) : 0
+  const prevStart = curStart ? new Date(curStart) : null
+  const prevEnd = curEnd ? new Date(curEnd) : null
+  if (prevStart) prevStart.setDate(prevStart.getDate() - daysRange)
+  if (prevEnd) prevEnd.setDate(prevEnd.getDate() - daysRange)
+  const inBetween = (dt, s, e)=>{ if(!dt||!s||!e) return false; dt.setHours(0,0,0,0); s.setHours(0,0,0,0); e.setHours(0,0,0,0); return dt>=s && dt<=e }
+  const conclCur = itemsCmp.filter(x=> isDoneStatus(x.status) && inBetween(toD(x.prazo), curStart, curEnd))
+  const conclPrev = itemsCmp.filter(x=> isDoneStatus(x.status) && inBetween(toD(x.prazo), prevStart, prevEnd))
+  const prodCur = conclCur.length
+  const prodPrev = conclPrev.length
+  const slaCur = (()=>{ const ok=conclCur.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot=conclCur.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })()
+  const slaPrev = (()=>{ const ok=conclPrev.filter(x=> x.prazo && x.dataConclusao && x.dataConclusao<=x.prazo).length; const tot=conclPrev.filter(x=> x.prazo && x.dataConclusao).length; return Math.round(100*(ok/Math.max(1,tot))) })()
+  const leadCur = (()=>{ const vals=conclCur.map(x=> anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg=(vals.reduce((a,b)=>a+b,0)/(vals.length||1)); return +(avg||0).toFixed(1) })()
+  const leadPrev = (()=>{ const vals=conclPrev.map(x=> anaDiffDays(x.dataCriacao||x.dataSolicitacao, x.dataConclusao)).filter(v=> v!=null); const avg=(vals.reduce((a,b)=>a+b,0)/(vals.length||1)); return +(avg||0).toFixed(1) })()
+  const createdCur = itemsCmp.filter(x=> inBetween(toD(x.prazo), curStart, curEnd))
+  const createdPrev = itemsCmp.filter(x=> inBetween(toD(x.prazo), prevStart, prevEnd))
+  const retCur = +(createdCur.reduce((a,x)=> a+(x.revisoes||0),0)/Math.max(1,createdCur.length)).toFixed(2)
+  const retPrev = +(createdPrev.reduce((a,x)=> a+(x.revisoes||0),0)/Math.max(1,createdPrev.length)).toFixed(2)
+  const goDetail = (id)=>{ try{ const found=demandas.find(x=> String(x.id)===String(id)); if(found){ setRoute && setRoute('demandas'); setView && setView('table'); onEdit && onEdit(found) } }catch{} }
+  const [anaLimit, setAnaLimit] = useState(10)
+  if (loading) {
+    return (
+      <div className="dashboard">
+        <div className="exec-summary">
+          {Array.from({length:6}).map((_,i)=> (<div key={i} className="skeleton row"></div>))}
         </div>
+      </div>
+    )
+  }
+  return (
+    <div className="reports" data-loading={loading?'true':'false'}>
+      <div className="reports-toolbar">
+        <div className="chips">
+          <div className="date-pill">
+            <span className="icon"><Icon name="calendar" /></span>
+            <input type="date" value={filtros.cIni||''} onChange={e=> setFiltros(prev=> ({ ...prev, cIni: e.target.value }))} />
+            <span style={{color:'var(--muted)'}}>—</span>
+            <input type="date" value={filtros.cFim||''} onChange={e=> setFiltros(prev=> ({ ...prev, cFim: e.target.value }))} />
+          </div>
+        </div>
+        
+        
+      </div>
+      <div className="reports-stack" style={{display:'block'}}>
+        <div className="report-card" style={{padding:24,borderRadius:12,boxShadow:'0 8px 24px rgba(0,0,0,0.2)',marginBottom:32}}>
+          <div className="report-title">Saúde Geral</div>
+          {(()=>{ const leadDelta = +(leadCur - leadPrev).toFixed(1); const leadUp = leadDelta>0; const leadDown = leadDelta<0; const leadColor = leadDown? 'var(--status-success)' : (leadUp? 'var(--status-danger)' : 'var(--muted)'); const slaColor = slaGeralPct>=90? 'var(--status-success)' : (slaGeralPct>=70? 'var(--status-warning)' : 'var(--status-danger)'); const slaState = slaGeralPct>=90? 'ok' : (slaGeralPct>=70? 'warn' : 'danger'); return (
+            <div className="kpi-grid" style={{display:'grid',gridTemplateColumns:'repeat(4, minmax(220px, 1fr))',gap:20}}>
+              <div className="kpi-card" style={{padding:28,border:'1px solid var(--border)',borderRadius:16,height:180,overflow:'hidden',whiteSpace:'nowrap'}}>
+                <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:13,marginBottom:8}}>Concluídas</div>
+                <div className="kpi-number" style={{fontSize:40,fontWeight:800}}><CountUp value={totalConcluidas} /></div>
+              </div>
+              <div className="kpi-card" style={{padding:28,border:'1px solid var(--border)',borderRadius:16,height:180,overflow:'hidden',whiteSpace:'nowrap'}}>
+                <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:13,marginBottom:8}}>SLA geral</div>
+                <div className={`progress sla ${slaState}`} style={{height:18,background:'var(--bg-secondary)',borderRadius:10,overflow:'hidden'}} title="Percentual de entregas no prazo">
+                  <div className="progress-fill" style={{width:`${slaGeralPct}%`,height:'100%',background:slaColor}} />
+                </div>
+                {slaState==='danger' ? (<div style={{display:'flex',alignItems:'center',gap:6,color:'var(--status-danger)'}}><span className="icon"><Icon name="alert" /></span><span>SLA em risco</span></div>) : null}
+              </div>
+              <div className="kpi-card" style={{padding:28,border:'1px solid var(--border)',borderRadius:16,height:180,overflow:'hidden',whiteSpace:'nowrap'}}>
+                <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:13,marginBottom:8}}>Lead Time médio</div>
+                <div style={{display:'flex',alignItems:'baseline',gap:10}}>
+                  <div className="kpi-number" style={{fontSize:40,fontWeight:800}}><CountUp value={leadMedio} suffix="d" /></div>
+                  <div style={{fontSize:16,color:leadColor}}>{leadUp?'\u2191': (leadDown?'\u2193':'\u2192')}</div>
+                </div>
+              </div>
+              <div className="kpi-card" style={{padding:28,border:'1px solid var(--border)',borderRadius:16,height:180,overflow:'hidden',whiteSpace:'nowrap'}}>
+                <div className="kpi-subtext" style={{color:'var(--muted)',fontSize:13,marginBottom:8}}>Backlog em risco</div>
+                <div className="kpi-number" style={{fontSize:32,fontWeight:800,color: backlogRisco>0?'var(--status-danger)':'var(--status-success)'}}>{backlogRisco>0? (<CountUp value={backlogRisco} />) : 'Nenhum risco'}</div>
+              </div>
+            </div>
+          ) })()}
+        </div>
+        <div className="report-card" style={{padding:24,borderRadius:12,boxShadow:'0 8px 24px rgba(0,0,0,0.2)',marginBottom:32,minHeight:140}}>
+          <div className="report-title">Funil de Status</div>
+          <div className="section-divider" />
+          <div>
+            {funil.map((s,i)=> (
+              <div key={i} style={{display:'flex',alignItems:'center',gap:10,margin:'10px 0'}}>
+                <div style={{minWidth:160,color:'var(--muted)'}}>{s.label}</div>
+                <div style={{flex:1,background:'var(--bg-secondary)',borderRadius:10,overflow:'hidden'}} title={`${s.label}: ${s.q}`}>
+                  <BarFill pct={s.pct} color={s.color} height={18} />
+                </div>
+                <div style={{minWidth:80,textAlign:'right'}}>{s.q}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="report-card" style={{padding:24,borderRadius:12,boxShadow:'0 8px 24px rgba(0,0,0,0.2)',marginBottom:32,minHeight:140}}>
+          <div className="report-title">Prioridades do Período</div>
+          <div className="section-divider" />
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3, minmax(220px, 1fr))',gap:16}}>
+            <div className="kpi-card" style={{padding:20,border:'1px solid var(--border)',borderRadius:12}}>
+              <div style={{color:'var(--muted)',marginBottom:6}}>Risco atual</div>
+              <div style={{fontSize:18,fontWeight:700,color: backlogRisco>0?'#FF5E5E':'#00C58E'}}>{backlogRisco>0? `${backlogRisco} demandas em risco` : 'Nenhuma demanda crítica'}</div>
+            </div>
+            <div className="kpi-card" style={{padding:20,border:'1px solid var(--border)',borderRadius:12}}>
+              <div style={{color:'var(--muted)',marginBottom:6}}>Maior retrabalho</div>
+              <div style={{fontSize:18,fontWeight:700}}>{topRet? topRet.designer : 'Nenhum'}</div>
+            </div>
+            {(()=>{ const stages=[{k:'Em Produção',q:totalAndamento},{k:'Revisão',q:totalRevisao},{k:'Criadas',q:totalCriadas}]; const top=stages.sort((a,b)=> b.q-a.q)[0]; const has=top.q>0; return (
+              <div className="kpi-card" style={{padding:20,border:'1px solid var(--border)',borderRadius:12}}>
+                <div style={{color:'var(--muted)',marginBottom:6}}>Gargalo atual</div>
+                <div style={{fontSize:18,fontWeight:700}}>{has? `Foco em ${top.k}` : 'Nenhum gargalo'}</div>
+              </div>
+            ) })()}
+          </div>
+        </div>
+        <div className="report-card" style={{padding:24,borderRadius:12,boxShadow:'0 8px 24px rgba(0,0,0,0.2)',marginBottom:32}}>
+          <div className="report-title">O que aprendemos neste período</div>
+          <div className="section-divider" />
+          <div className="insights-grid" style={{display:'grid',gridTemplateColumns:'repeat(3, minmax(220px, 1fr))',gap:16}}>
+            {(()=>{ const metaSla=90; const ins=[]; const capMsg = teamUsedPct>=110 ? 'Redistribuir cargas para aliviar capacidade.' : teamUsedPct>=90 ? 'Monitorar capacidade e priorizar entregas.' : 'Aproveitar capacidade para antecipar demandas.'; ins.push({ t: teamUsedPct>=90 ? `Ajustar capacidade (${teamUsedPct}%)` : `Planejar capacidade (${teamUsedPct}%)`, a: capMsg }); const qualMsg = retrabalhoPct>=30 ? 'Padronizar revisões e reduzir retrabalho.' : retrabalhoPct>=15 ? 'Refinar briefing para diminuir revisões.' : 'Manter qualidade consistente.'; ins.push({ t: retrabalhoPct>=15 ? `Reduzir retrabalho (${retrabalhoPct}%)` : `Manter qualidade (${retrabalhoPct}%)`, a: qualMsg }); const ritmoDelta = prodCur - prodPrev; const ritmoUp = ritmoDelta>0; const ritmoDown = ritmoDelta<0; const ritmoMsg = ritmoDown ? 'Remover bloqueios e acelerar fluxo.' : ritmoUp ? 'Manter ritmo e consolidar ganhos.' : 'Estabilizar fluxo de produção.'; ins.push({ t: ritmoDown ? 'Acelerar ritmo' : ritmoUp ? 'Sustentar ritmo' : 'Estabilizar ritmo', a: ritmoMsg }); return ins.slice(0,3).map((x,i)=> (
+              <div key={i} className="insight-card" style={{padding:18,border:'1px solid var(--border)',borderRadius:12}}>
+                <div className="insight-text" style={{fontSize:16,fontWeight:700}}>{x.t}</div>
+                <div className="insight-text" style={{color:'var(--muted)'}}>👉 {x.a}</div>
+              </div>
+            )) })()}
+          </div>
+        </div>
+        
+        
+        
       </div>
     </div>
   )
