@@ -93,8 +93,12 @@ const defaultTheme = {
 }
 
 const hojeISO = () => {
-  const d = new Date(); const z = n => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`
+  try {
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone:'America/Sao_Paulo', year:'numeric', month:'2-digit', day:'2-digit' })
+    return fmt.format(new Date())
+  } catch {
+    const d = new Date(); const z = n => String(n).padStart(2,'0'); return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`
+  }
 }
 /* Listas locais de demandas removidas: carregadas via Firestore */
 const proxId = arr => {
@@ -170,7 +174,8 @@ function Icon({ name, size=18 }) {
   return null
 }
 
-function Header({ onNew, view, setView, showNew, user, onLogout }) {
+function Header({ onNew, view, setView, showNew, user, onLogout, mentions, onOpenDemanda }) {
+  const [notifOpen, setNotifOpen] = useState(false)
   return (
     <div className="topbar">
       <div className="topbar-left">
@@ -180,6 +185,21 @@ function Header({ onNew, view, setView, showNew, user, onLogout }) {
         {user ? (
           <div style={{display:'flex',alignItems:'center',gap:8}}>
             <span className="chip">{user.name||user.username}</span>
+            <button className="icon notif-btn" onClick={()=> setNotifOpen(o=> !o)} title="Menções">
+              <span className="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22a2 2 0 0 0 2-2H10a2 2 0 0 0 2 2Z"/><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7Z"/></svg></span>
+              {Array.isArray(mentions) && mentions.length>0 ? (<span className="notif-dot">{mentions.length}</span>) : null}
+            </button>
+            {notifOpen ? (
+              <div className="notif-dropdown" onMouseLeave={()=> setNotifOpen(false)}>
+                {(mentions||[]).slice(0,6).map(m=> (
+                  <button key={`${m.id}-${m.quando||''}`} className="notif-item" type="button" onClick={()=>{ onOpenDemanda && onOpenDemanda(m.id); setNotifOpen(false) }}>
+                    <span className="title">{m.titulo}</span>
+                    <span className="msg">{m.msg}</span>
+                  </button>
+                ))}
+                {(!mentions || mentions.length===0) ? (<div className="notif-empty">Sem menções</div>) : null}
+              </div>
+            ) : null}
             <button className="primary" onClick={onLogout}><span className="icon"><Icon name="logout" /></span><span>Sair</span></button>
           </div>
         ) : null}
@@ -374,7 +394,7 @@ function TableView({ items, onEdit, onStatus, cadStatus, onDelete, onDuplicate, 
   const pad = n => String(n).padStart(2,'0')
   const isoWeek = d => { const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const dayNum = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() + 4 - dayNum); const yearStart = new Date(Date.UTC(date.getUTCFullYear(),0,1)); const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1)/7); return `${date.getUTCFullYear()}-W${pad(weekNo)}` }
   const thisWeek = isoWeek(new Date())
-  const daysLeft = (p)=>{ if(!p) return ''; const [y,m,d]=String(p).split('-').map(Number); const end=new Date(y,(m||1)-1,(d||1)); const start=new Date(); start.setHours(0,0,0,0); end.setHours(0,0,0,0); return Math.round((end - start)/86400000) }
+  const daysLeft = (p)=>{ if(!p) return ''; const [y,m,d]=String(p).split('-').map(Number); const end=new Date(y,(m||1)-1,(d||1)); const start=new Date(new Date().toLocaleString('en-US',{ timeZone:'America/Sao_Paulo' })); start.setHours(0,0,0,0); end.setHours(0,0,0,0); return Math.round((end - start)/86400000) }
   const fmtDM = (s)=>{ if(!s) return ''; const [y,m,d]=String(s).split('-').map(Number); const dd=String(d).padStart(2,'0'); const ab=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][Math.max(0,Math.min(11,(m-1)||0))]; return `${dd}.${ab}` }
   if (loading) {
     return (
@@ -589,7 +609,7 @@ function CalendarView({ items, refDate }) {
   )
 }
 
-function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, cadPlataformas, onDelete, userLabel, canDelete, onAddComment, cadOrigens, currentUser }) {
+function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, cadPlataformas, onDelete, userLabel, canDelete, onAddComment, cadOrigens, currentUser, usersAll, canEdit, displayUser }) {
   const [designer, setDesigner] = useState(initial?.designer || currentUser || '')
   const [tipoMidia, setTipoMidia] = useState(initial?.tipoMidia || 'Post')
   const [titulo, setTitulo] = useState(initial?.titulo || '')
@@ -604,6 +624,11 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
   const [prazo, setPrazo] = useState(initial?.prazo || '')
   const [comentarios, setComentarios] = useState(initial?.comentarios || [])
   const [novoComentario, setNovoComentario] = useState('')
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [mentionOpen, setMentionOpen] = useState(false)
+  const [mentionList, setMentionList] = useState([])
+  const commentRef = useRef(null)
+  const [commentsExpanded, setCommentsExpanded] = useState(false)
   const [historico, setHistorico] = useState(initial?.historico || [])
   const [origem, setOrigem] = useState(initial?.origem || '')
   const [campanha, setCampanha] = useState(initial?.campanha || '')
@@ -638,7 +663,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
   const submit = e => { e.preventDefault(); onSubmit({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, dataFeedback, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) }
   const addComentario = () => { const v = novoComentario.trim(); if (!v) return; const men = extractMentions(v); const c = { texto: v, data: hojeISO(), mentions: men, autor: userLabel }; const h = { tipo:'comentario', autor:userLabel, data: c.data, texto: v, mentions: men }; setComentarios(prev=> [c, ...prev]); setHistorico(prev=> [h, ...prev]); setNovoComentario(''); try { onAddComment && onAddComment(initial?.id, c, h) } catch {}
   }
-  const fmtDT = (s)=>{ if(!s) return ''; try{ return new Date(s).toLocaleString('pt-BR',{ day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) }catch{return s} }
+  const fmtDT = (s)=>{ if(!s) return ''; try{ return new Date(s).toLocaleString('pt-BR',{ timeZone:'America/Sao_Paulo', day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) }catch{return s} }
   const [nowTs, setNowTs] = useState(Date.now())
   useEffect(()=>{ const id = setInterval(()=> setNowTs(Date.now()), 1000); return ()=> clearInterval(id) },[])
   const fmtHMS = (ms)=>{ if(!ms||ms<=0) return '00:00:00'; const s = Math.floor(ms/1000); const hh = String(Math.floor(s/3600)).padStart(2,'0'); const mm = String(Math.floor((s%3600)/60)).padStart(2,'0'); const ss = String(s%60).padStart(2,'0'); return `${hh}:${mm}:${ss}` }
@@ -650,18 +675,24 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
   const effectiveStart = startedAtMs ?? fallbackStartRef.current
   const totalMs = baseMs + (effectiveStart ? Math.max(0, nowTs - effectiveStart) : 0)
   const [openStep, setOpenStep] = useState(null)
+  const linkifyHtml = (s)=>{
+    const t = String(s||'')
+    const esc = t.replace(/[&<>]/g, m=> (m==='&'?'&amp;': m==='<'?'&lt;':'&gt;'))
+    const withLinks = esc.replace(/((https?:\/\/|www\.)[^\s]+)/gi, m=>{ const url = /^https?:\/\//i.test(m) ? m : `https://${m}`; return `<a href="${url}" target="_blank" rel="noreferrer">${m}</a>` })
+    return withLinks.replace(/\n/g,'<br/>')
+  }
   if (!open) return null
   return (
     <div className="modal">
       <div className={`modal-dialog ${mode!=='create'?'tall':''}`} onClick={e=>e.stopPropagation()}>
-        <div className="modal-header">
-          {mode==='create' ? (
-            <div className="title"><span className="icon"><Icon name="plus" /></span><span>Nova demanda</span></div>
-          ) : (
-            <div className="title editable" contentEditable suppressContentEditableWarning onInput={e=> setTitulo(e.currentTarget.textContent || '')}>{titulo || 'Sem título'}</div>
-          )}
-          <button className="icon" onClick={onClose}><Icon name="close" /></button>
-        </div>
+            <div className="modal-header">
+              {mode==='create' ? (
+                <div className="title"><span className="icon"><Icon name="plus" /></span><span>Nova demanda</span></div>
+              ) : (
+                <div className="title editable" contentEditable suppressContentEditableWarning onInput={e=> setTitulo(e.currentTarget.textContent || '')}>{titulo || 'Sem título'}</div>
+              )}
+              <button className="icon" onClick={onClose}><Icon name="close" /></button>
+            </div>
         
         <div className={`status-bar ${statusClass(initial?.status || 'Aberta')}`}>
           <div>{initial?.status || 'Aberta'}</div>
@@ -747,63 +778,124 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
               
               
               </div>
+            {mode==='create' && (
+              <div className="form-row"><label>Descrição</label><textarea rows={8} className="desc-input" value={descricao} onChange={e=> setDescricao(e.target.value)} />{/(https?:\/\/|www\.)/i.test(String(descricao||'')) ? (<div className="desc-preview" dangerouslySetInnerHTML={{ __html: linkifyHtml(descricao) }} />) : null}</div>
+              )}
               {mode==='create' && (
-                <div className="form-row"><label>Descrição</label><textarea rows={8} className="desc-input" value={descricao} onChange={e=> setDescricao(e.target.value)} /></div>
+                <div className="activity">
+                  <div className="form-row"><label>Comentários</label>
+                    <input ref={commentRef} placeholder="Escreva um comentário… use @ para mencionar" value={novoComentario} onChange={e=>{ const v=e.target.value; const pos=e.target.selectionStart||v.length; setNovoComentario(v); const idx=v.lastIndexOf('@', (pos||v.length)-1); if(idx>=0){ const rest=v.slice(idx+1); const endSpace=rest.indexOf(' '); const endNl=rest.indexOf('\n'); const end=(endSpace>=0 && endNl>=0) ? Math.min(endSpace,endNl) : (endSpace>=0? endSpace : (endNl>=0? endNl : -1)); const q=end>=0? rest.slice(0,end) : rest.slice(0, pos-(idx+1)); const qq=String(q||'').trim(); setMentionQuery(qq); if(qq.length>0){ const ql=qq.toLowerCase(); const list=(usersAll||[]).filter(u=> (String(u.username||'').toLowerCase().includes(ql)) || (String(u.name||'').toLowerCase().includes(ql))).slice(0,6); setMentionList(list); setMentionOpen(list.length>0) } else { setMentionOpen(false); setMentionList([]) } } else { setMentionOpen(false); setMentionList([]) } }} onBlur={()=> setTimeout(()=> setMentionOpen(false), 80)} />
+                    {mentionOpen && mentionList.length>0 && (
+                      <div className="mentions-suggest">
+                        {mentionList.map(u=> (
+                          <div key={u.id||u.username} className="suggest-item" onMouseDown={e=>{ e.preventDefault(); const el=commentRef.current; const v=String(novoComentario||''); const pos=el? el.selectionStart||v.length : v.length; const idx=v.lastIndexOf('@', (pos||v.length)-1); const prefix=v.slice(0, idx); const rest=v.slice(idx+1); const endSpace=rest.indexOf(' '); const endNl=rest.indexOf('\n'); const end=(endSpace>=0 && endNl>=0) ? Math.min(endSpace,endNl) : (endSpace>=0? endSpace : (endNl>=0? endNl : -1)); const endIdx=end>=0? idx+1+end : pos; const suffix=v.slice(endIdx); const handle=`@${u.username||u.name}`; const nv=`${prefix}${handle} ${suffix}`; setNovoComentario(nv); setMentionOpen(false); setMentionList([]); setMentionQuery(''); setTimeout(()=>{ try{ const el2=commentRef.current; if(el2){ const caret=(prefix.length+handle.length+1); el2.focus(); el2.setSelectionRange(caret, caret) } }catch{} }, 0) }}>@{u.username||''} — {u.name||u.username}</div>
+                        ))}
+                      </div>
+                    )}
+                    {novoComentario.trim().length>0 && (
+                      <div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}>
+                        <button className="primary" type="button" onClick={addComentario}>Adicionar</button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="activity-list">
+                    {(comentarios||[]).length===0 ? <div className="empty">Sem comentários</div> : (
+                      ((commentsExpanded? (comentarios||[]) : (comentarios||[]).slice(0,2))).map((ev,i)=> (
+                        <div key={i} className="activity-item">
+                          <div className="activity-entry">
+                            <div className="avatar">V</div>
+                            <div className="entry-content">
+                              <div className="entry-title">
+                                <span><strong>{displayUser(ev.autor||'—')}</strong> comentou: {ev.texto}</span>
+                              </div>
+                              <div className="entry-time">{fmtDT(ev.data)}</div>
+                              {Array.isArray(ev.mentions) && ev.mentions.length>0 && (
+                                <div className="mentions-row">
+                                  {ev.mentions.map(m=> (
+                                    <span key={m} className={`mention-pill ${String(userLabel||'').toLowerCase()===String(m||'').toLowerCase()?'you':''}`}>@{m}{String(userLabel||'').toLowerCase()===String(m||'').toLowerCase()? ' • Você foi mencionado':''}</span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                    {(comentarios||[]).length>2 && (
+                      <div style={{display:'flex',justifyContent:'center',marginTop:8}}>
+                        <button className="tertiary" type="button" onClick={()=> setCommentsExpanded(v=> !v)}>{commentsExpanded? 'Mostrar menos' : `Ver todos os comentários (${(comentarios||[]).length-2} mais)`}</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
               
             </div>
             {mode!=='create' && (
               <div className="modal-center">
                 <div className="date-row">
-                  <div className="form-row"><label>Data de Solicitação</label><input type="date" value={dataSolic} disabled /></div>
-                  <div className="form-row"><label>Data de Criação</label><input type="date" value={dataCriacao} disabled /></div>
+                  <div className="form-row"><label>Data de Solicitação</label><input type="date" value={dataSolic} onChange={e=> setDataSolic(e.target.value)} disabled={!canEdit} /></div>
+                  <div className="form-row"><label>Data de Criação</label><input type="date" value={dataCriacao} onChange={e=> setDataCriacao(e.target.value)} disabled={!canEdit} /></div>
                   <div className="form-row"><label>Prazo</label><input type="date" value={prazo} onChange={e=>setPrazo(e.target.value)} /></div>
                   {String(initial?.status||'').toLowerCase().includes('feedback') && (
-                    <div className="form-row"><label>Data de Feedback</label><input type="date" value={dataFeedback} onChange={e=> setDataFeedback(e.target.value)} /></div>
+                    <div className="form-row"><label>Data de Feedback</label><input type="date" value={dataFeedback} onChange={e=> setDataFeedback(e.target.value)} disabled={!canEdit} /></div>
                   )}
                 </div>
-                <div className="form-row"><label>Descrição</label><textarea rows={12} className="desc-input" value={descricao} onChange={e=> setDescricao(e.target.value)} /></div>
+                <div className="form-row"><label>Descrição</label><textarea rows={12} className="desc-input" value={descricao} onChange={e=> setDescricao(e.target.value)} />{/(https?:\/\/|www\.)/i.test(String(descricao||'')) ? (<div className="desc-preview" dangerouslySetInnerHTML={{ __html: linkifyHtml(descricao) }} />) : null}</div>
+                <div className="activity">
+                  <div className="form-row"><label>Comentários</label>
+                    <input ref={commentRef} placeholder="Escreva um comentário… use @ para mencionar" value={novoComentario} onChange={e=>{ const v=e.target.value; const pos=e.target.selectionStart||v.length; setNovoComentario(v); const idx=v.lastIndexOf('@', (pos||v.length)-1); if(idx>=0){ const rest=v.slice(idx+1); const endSpace=rest.indexOf(' '); const endNl=rest.indexOf('\n'); const end=(endSpace>=0 && endNl>=0) ? Math.min(endSpace,endNl) : (endSpace>=0? endSpace : (endNl>=0? endNl : -1)); const q=end>=0? rest.slice(0,end) : rest.slice(0, pos-(idx+1)); const qq=String(q||'').trim(); setMentionQuery(qq); if(qq.length>0){ const ql=qq.toLowerCase(); const list=(usersAll||[]).filter(u=> (String(u.username||'').toLowerCase().includes(ql)) || (String(u.name||'').toLowerCase().includes(ql))).slice(0,6); setMentionList(list); setMentionOpen(list.length>0) } else { setMentionOpen(false); setMentionList([]) } } else { setMentionOpen(false); setMentionList([]) } }} onBlur={()=> setTimeout(()=> setMentionOpen(false), 80)} />
+                    {mentionOpen && mentionList.length>0 && (
+                      <div className="mentions-suggest">
+                        {mentionList.map(u=> (
+                          <div key={u.id||u.username} className="suggest-item" onMouseDown={e=>{ e.preventDefault(); const el=commentRef.current; const v=String(novoComentario||''); const pos=el? el.selectionStart||v.length : v.length; const idx=v.lastIndexOf('@', (pos||v.length)-1); const prefix=v.slice(0, idx); const rest=v.slice(idx+1); const endSpace=rest.indexOf(' '); const endNl=rest.indexOf('\n'); const end=(endSpace>=0 && endNl>=0) ? Math.min(endSpace,endNl) : (endSpace>=0? endSpace : (endNl>=0? endNl : -1)); const endIdx=end>=0? idx+1+end : pos; const suffix=v.slice(endIdx); const handle=`@${u.username||u.name}`; const nv=`${prefix}${handle} ${suffix}`; setNovoComentario(nv); setMentionOpen(false); setMentionList([]); setMentionQuery(''); setTimeout(()=>{ try{ const el2=commentRef.current; if(el2){ const caret=(prefix.length+handle.length+1); el2.focus(); el2.setSelectionRange(caret, caret) } }catch{} }, 0) }}>@{u.username||''} — {u.name||u.username}</div>
+                        ))}
+                      </div>
+                    )}
+                    {novoComentario.trim().length>0 && (
+                      <div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}>
+                        <button className="primary" type="button" onClick={addComentario}>Adicionar</button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="activity-list">
+                    {(comentarios||[]).length===0 ? <div className="empty">Sem comentários</div> : (
+                      ((commentsExpanded? (comentarios||[]) : (comentarios||[]).slice(0,2))).map((ev,i)=> (
+                        <div key={i} className="activity-item">
+                          <div className="activity-entry">
+                            <div className="avatar">V</div>
+                            <div className="entry-content">
+                              <div className="entry-title">
+                                <span><strong>{displayUser(ev.autor||'—')}</strong> comentou: {ev.texto}</span>
+                              </div>
+                              <div className="entry-time">{fmtDT(ev.data)}</div>
+                              {Array.isArray(ev.mentions) && ev.mentions.length>0 && (
+                                <div className="mentions-row">
+                                  {ev.mentions.map(m=> (
+                                    <span key={m} className={`mention-pill ${String(userLabel||'').toLowerCase()===String(m||'').toLowerCase()?'you':''}`}>@{m}{String(userLabel||'').toLowerCase()===String(m||'').toLowerCase()? ' • Você foi mencionado':''}</span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                    {(comentarios||[]).length>2 && (
+                      <div style={{display:'flex',justifyContent:'center',marginTop:8}}>
+                        <button className="tertiary" type="button" onClick={()=> setCommentsExpanded(v=> !v)}>{commentsExpanded? 'Mostrar menos' : `Ver todos os comentários (${(comentarios||[]).length-2} mais)`}</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
             {mode!=='create' && (
               <div className="modal-side">
-          <div className="activity">
-            <div className="form-row"><label>Comentários</label>
-                  <input placeholder="Escreva um comentário… use @ para mencionar" value={novoComentario} onChange={e=>setNovoComentario(e.target.value)} />
-                  {novoComentario.trim().length>0 && (
-                    <div style={{display:'flex',justifyContent:'flex-end',marginTop:8}}>
-                      <button className="primary" type="button" onClick={addComentario}>Adicionar</button>
-                    </div>
-                  )}
-                </div>
-                <div className="activity-list">
-                  {(comentarios||[]).length===0 ? <div className="empty">Sem comentários</div> : (
-                    (comentarios||[]).map((ev,i)=> (
-                      <div key={i} className="activity-item">
-                        <div className="activity-entry">
-                          <div className="avatar">V</div>
-                          <div className="entry-content">
-                            <div className="entry-title">
-                              <span><strong>{ev.autor||'—'}</strong> comentou: {ev.texto}</span>
-                            </div>
-                            <div className="entry-time">{fmtDT(ev.data)}</div>
-                            {Array.isArray(ev.mentions) && ev.mentions.length>0 && (
-                              <div className="mentions-row">
-                                {ev.mentions.map(m=> (
-                                  <span key={m} className={`mention-pill ${String(userLabel||'').toLowerCase()===String(m||'').toLowerCase()?'you':''}`}>@{m}{String(userLabel||'').toLowerCase()===String(m||'').toLowerCase()? ' • Você foi mencionado':''}</span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-                {mode!=='create' && (
-                  <div className="timeline">
-                    <div className="form-row"><label>Linha do tempo</label></div>
-                    {['Criado','Em produção','Aguardando Feedback','Revisar','Aprovada','Concluída','Postado'].map(step=>{
+          
+                <div className="timeline">
+                  <div className="form-row"><label>Linha do tempo</label></div>
+                  {['Criado','Em produção','Aguardando Feedback','Revisar','Aprovada','Concluída','Postado'].map(step=>{
                       const match = (h, s)=>{
                         const val = String((h.status_novo||h.para||'')||'').toLowerCase()
                         if (s==='Criado') return val==='aberta'
@@ -824,7 +916,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
                       const last = list && list.length ? list[list.length-1] : null
                       const dur = last?.duracao_em_minutos!=null ? formatMinutes(last.duracao_em_minutos) : ''
                       const when = last?.data_hora_evento ? fmtDT(last.data_hora_evento) : fmtDT(last?.data)
-                      const resp = last?.responsavel || last?.autor || ''
+                      const resp = displayUser(last?.responsavel || last?.autor || '')
                       const count = list.length
                       const isOpen = openStep===step
                       return (
@@ -838,7 +930,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
                                 {list.map((e,idx)=> (
                                   <div key={idx} className="timeline-detail-row">
                                     <div>{e?.data_hora_evento ? fmtDT(e.data_hora_evento) : fmtDT(e?.data)}</div>
-                                    <div>{e?.responsavel || e?.autor || ''}</div>
+                                    <div>{displayUser(e?.responsavel || e?.autor || '')}</div>
                                     <div>{e?.duracao_em_minutos!=null ? formatMinutes(e.duracao_em_minutos) : ''}</div>
                                   </div>
                                 ))}
@@ -849,14 +941,7 @@ function Modal({ open, mode, onClose, onSubmit, initial, cadTipos, designers, ca
                       )
                     })}
                   </div>
-                )}
-                {mode!=='create' && (
-                  <div className="ia-panel">
-                    <div className="form-row"><label>Previsão de entrega por IA</label></div>
-                    <div className="ia-text">{initial?.previsaoIA || calcPrevisaoIA([], initial||{})}</div>
-                  </div>
-                )}
-              </div>
+                
               </div>
             )}
           </div>
@@ -977,7 +1062,7 @@ function AlertBar({ revisarCount, aprovadaCount, onShowRevisar, onShowAprovada }
   )
 }
 
-export default function App() {
+function AppInner() {
   const [user, setUser] = useState(null)
   const [demandas, setDemandas] = useState([])
   const [demCols, setDemCols] = useState({})
@@ -998,6 +1083,8 @@ export default function App() {
   const [cadPlataformas, setCadPlataformas] = useState([])
   const [cadOrigens, setCadOrigens] = useState([])
   const [usersAll, setUsersAll] = useState([])
+  const userIndex = useMemo(()=>{ const m={}; (usersAll||[]).forEach(u=>{ const uname=String(u.username||'').toLowerCase(); const email=String(u.email||'').toLowerCase(); const name=(u.name||uname||''); if(uname) m[uname]=name; if(email) m[email]=name }); return m },[usersAll])
+  const displayUser = (v)=>{ const s=String(v||'').toLowerCase(); return userIndex[s] || (v||'') }
   const [cadStatusColors, setCadStatusColors] = useState({ Aberta:'#f59e0b', "Em Progresso":"#3b82f6", "Concluída":"#10b981" })
   const designersFromDemandas = useMemo(()=> Array.from(new Set(demandas.map(x=>x.designer).filter(Boolean))).sort(), [demandas])
   const designersFromUsers = useMemo(()=> usersAll.filter(u=> (u.cargo||'')==='Designer').map(u=> u.username).filter(Boolean).sort(), [usersAll])
@@ -1006,14 +1093,29 @@ export default function App() {
   const role = user?.role||'comum'
   const items = useMemo(()=> aplicarFiltros(demandas, filtros), [demandas, filtros])
   const dashItems = useMemo(()=> items, [items])
-  const dashDesigners = useMemo(()=> designers, [designers])
-  const itemsSorted = useMemo(()=> items.slice().sort((a,b)=>{
+  const dashDesigners = useMemo(()=> Array.isArray(designers) ? designers : [], [designers])
+  const itemsSorted = useMemo(()=> Array.isArray(items) ? items.slice().sort((a,b)=>{
     const da = a.dataCriacao||''; const db = b.dataCriacao||''; const c = db.localeCompare(da); if (c!==0) return c; const ia = a.id||0; const ib = b.id||0; return ib - ia
-  }), [items])
-  const designersVisible = useMemo(()=> designers, [designers])
-  const itemsVisible = useMemo(()=> itemsSorted, [itemsSorted])
+  }) : [], [items])
+  const designersVisible = useMemo(()=> Array.isArray(designers) ? designers : [], [designers])
+  const itemsVisible = useMemo(()=> Array.isArray(itemsSorted) ? itemsSorted : [], [itemsSorted])
+  const myMentions = useMemo(()=>{
+    try {
+      if (!user) return []
+      const keys = new Set([String(user.username||'').toLowerCase(), String(user.name||'').toLowerCase()])
+      const list = []
+      (demandas||[]).forEach(it=>{
+        (it.historico||[]).forEach(h=>{
+          const has = (h.tipo==='notificacao') && Array.isArray(h.mentions) && h.mentions.some(m=> keys.has(String(m||'').toLowerCase()))
+          if (has) list.push({ id: it.id, titulo: it.titulo||'(sem título)', quando: h.data_hora_evento||h.data||'', msg: h.mensagem||'Você foi mencionado' })
+        })
+      })
+      return list.sort((a,b)=> String(b.quando||'').localeCompare(String(a.quando||'')))
+    } catch { return [] }
+  }, [demandas, user])
   const revisarCount = useMemo(()=> itemsVisible.filter(x=> /revisar/i.test(String(x.status||''))).length, [itemsVisible])
   const aprovadaCount = useMemo(()=> itemsVisible.filter(x=> /aprovada/i.test(String(x.status||''))).length, [itemsVisible])
+  const revisarDesigners = useMemo(()=> Array.from(new Set(itemsVisible.filter(x=> /revisar/i.test(String(x.status||''))).map(x=> displayUser(x.designer||'')))).filter(Boolean), [itemsVisible, displayUser])
   const onShowRevisar = ()=>{ setRoute('demandas'); setFiltros(prev=> ({ ...prev, status: 'Revisar' })) }
   const onShowAprovada = ()=>{ setRoute('demandas'); setFiltros(prev=> ({ ...prev, status: 'Aprovada' })) }
   const statusCounts = useMemo(()=>{
@@ -1034,7 +1136,15 @@ export default function App() {
   const [groupBy, setGroupBy] = useState('status')
   const userLabel = useMemo(()=> user?.name || user?.username || 'Você', [user])
   const allRoutes = ['dashboard','demandas','config','cadastros','relatorios','usuarios']
-  const allowedRoutes = useMemo(()=> allRoutes, [])
+  const allowedRoutes = useMemo(()=> {
+    const pages = user?.pages
+    const roleCur = user?.role || 'comum'
+    if (pages && typeof pages==='object') {
+      const list = Object.keys(pages).filter(k=> pages[k])
+      return Array.isArray(list) ? (roleCur==='admin' ? allRoutes : list) : (roleCur==='admin' ? allRoutes : ['dashboard','demandas'])
+    }
+    return roleCur==='admin' ? allRoutes : ['dashboard','demandas']
+  }, [user])
 
   useEffect(()=>{ /* Firebase somente: sem persistência local */ },[demandas, db])
   useEffect(()=>{ if (!db) setLoading(false) },[db])
@@ -1125,13 +1235,14 @@ export default function App() {
     }
   }
 
-  const canCreate = (user?.actions?.criar !== false)
-  const canDelete = (user?.actions?.excluir !== false)
-  const canView = (user?.actions?.visualizar !== false)
+  const isAdmin = (user?.role==='admin')
+  const canCreate = isAdmin || (user?.actions?.criar !== false)
+  const canDelete = isAdmin || (user?.actions?.excluir !== false)
+  const canView = isAdmin || (user?.actions?.visualizar !== false)
   const onNew = ()=>{ if (!user || !canCreate) return; setModalMode('create'); setEditing(null); setModalOpen(true) }
   const onEdit = it => { if (!user || !canView) return; setModalMode('edit'); setEditing(it); setModalOpen(true) }
   const onDuplicate = async (it) => {
-    const base = { ...it, status: 'Aberta', dataSolicitacao: hojeISO(), dataCriacao: hojeISO() }
+    const base = { ...it, status: 'Aberta', dataSolicitacao: hojeISO(), dataCriacao: null }
     if (db) {
       try { const newId = String(Date.now()); await addDoc(collection(db, DEM_COL), { ...base, id: newId, createdAt: serverTimestamp() }) } catch {}
     }
@@ -1239,6 +1350,7 @@ export default function App() {
       const historico = notif ? [notif, h, ...(x.historico||[])] : [h, ...(x.historico||[])]
       return { ...x, comentarios, historico, fxSavedAt: Date.now() }
     }))
+    setEditing(prev=> (prev && String(prev.id)===String(id)) ? ({ ...prev, comentarios: [c, ...(prev.comentarios||[])], historico: [h, ...(prev.historico||[])] }) : prev)
     const found = demandas.find(x=> String(x.id)===String(id))
     if (db && found) {
       try {
@@ -1361,6 +1473,9 @@ export default function App() {
       setDemandas(prev=> prev.map(x=> x.id===editing.id ? updatedView : x))
       if (db) { try { const qd=query(collection(db, DEM_COL), where('id','==', String(editing.id))); const snap=await getDocs(qd); const tasks=[]; snap.forEach(d=> tasks.push(updateDoc(doc(db, DEM_COL, d.id), updated))); if (tasks.length) await Promise.all(tasks) } catch {} }
       await ensureCad()
+      try { await pushAlert(editing.id, 'Demanda salva') } catch {}
+      setModalOpen(false)
+      setRoute('demandas')
     } else {
       const hoje = hojeISO()
       const nowIso = new Date().toISOString()
@@ -1368,12 +1483,13 @@ export default function App() {
       const designerFinal = user?.username || designer
       const previsaoIA = calcPrevisaoIA(demandas, { designer: designerFinal, tipoMidia, prazo, revisoes: 0, plataforma, origem })
       const tmpId = `tmp-${Date.now()}`
-      const novo = { id: tmpId, designer: designerFinal, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: hoje, dataFeedback: undefined, status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null, finishedAt: null, revisoes: 0, createdBy: userLabel, previsaoIA, slaStartAt: null, slaStopAt: null, slaPauseMs: 0, pauseStartedAt: null, slaNetMs: 0, slaOk: null, leadTotalMin: 0, leadPorFase: {} }
+      const novo = { id: tmpId, designer: designerFinal, tipoMidia, titulo, link, descricao, comentarios: [], historico: [inicial], arquivos: (arquivos||[]), arquivoNome, plataforma, origem, campanha, dataSolicitacao: dataSolic, dataCriacao: undefined, dataFeedback: undefined, status: 'Aberta', prazo, tempoProducaoMs: 0, startedAt: null, finishedAt: null, revisoes: 0, createdBy: userLabel, previsaoIA, slaStartAt: null, slaStopAt: null, slaPauseMs: 0, pauseStartedAt: null, slaNetMs: 0, slaOk: null, leadTotalMin: 0, leadPorFase: {} }
       setDemandas(prev=> [novo, ...prev])
       if (db) {
         try {
           const store = { ...novo, id: String(tmpId), createdAt: serverTimestamp() }
           if (store.dataSolicitacao === undefined) store.dataSolicitacao = null
+          if (store.dataCriacao === undefined) store.dataCriacao = null
           if (store.dataFeedback === undefined) store.dataFeedback = null
           if (store.arquivoNome === undefined) store.arquivoNome = null
           await addDoc(collection(db, DEM_COL), store)
@@ -1385,8 +1501,10 @@ export default function App() {
         }
       }
       await ensureCad()
+      try { await pushAlert(tmpId, 'Demanda salva') } catch {}
     }
     setModalOpen(false)
+    setRoute('demandas')
   }
 
   const onResetSystem = async () => {
@@ -1410,7 +1528,7 @@ export default function App() {
       {user ? <Sidebar route={route} setRoute={setRoute} allowedRoutes={allowedRoutes} /> : null}
       <div className={`content ${user?'':'no-sidebar'} page`}>
         <div className="app">
-          {user ? <Header onNew={onNew} view={view} setView={setView} showNew={!!user} user={user} onLogout={logout} setRoute={setRoute} /> : null}
+          {user ? <Header onNew={onNew} view={view} setView={setView} showNew={!!user} user={user} onLogout={logout} mentions={myMentions} onOpenDemanda={(id)=>{ const found=demandas.find(x=> String(x.id)===String(id)); if(found){ setRoute('demandas'); onEdit(found) } }} /> : null}
           
           {!user && (
             <LoginView onLogin={login} />
@@ -1424,14 +1542,19 @@ export default function App() {
                 <FilterBar filtros={filtros} setFiltros={setFiltros} designers={designersVisible} showSearch={false} statusCounts={statusCounts} />
               </div>
           <div className="content-col">
-            <div className="top-search">
-              <input className="search" placeholder="Pesquisar demandas..." value={filtros.q||''} onChange={e=> setFiltros(prev=> ({ ...prev, q: e.target.value }))} />
-              <button className="primary" onClick={onNew} disabled={!canCreate}><span className="icon"><Icon name="plus" /></span><span>Nova demanda</span></button>
-              <div style={{display:'flex',alignItems:'center',gap:8,marginLeft:'auto'}}>
-                <ViewButtonsInner view={view} setView={setView} />
-              </div>
+          <div className="top-search">
+            <input className="search" placeholder="Pesquisar demandas..." value={filtros.q||''} onChange={e=> setFiltros(prev=> ({ ...prev, q: e.target.value }))} />
+            <button className="primary" onClick={onNew} disabled={!canCreate}><span className="icon"><Icon name="plus" /></span><span>Nova demanda</span></button>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginLeft:'auto'}}>
+              <ViewButtonsInner view={view} setView={setView} />
             </div>
-            {view==='table' && (
+          </div>
+          {revisarCount>0 && (
+            <div className="alert-banner" title="Demandas em revisão">
+              {(()=>{ const names=revisarDesigners; const namesStr = names.length<=2 ? names.join(' e ') : `${names.slice(0, names.length-1).join(', ')} e ${names[names.length-1]}`; const temStr = (names.length>1) ? 'têm' : 'tem'; const demStr = revisarCount>1 ? 'demandas' : 'demanda'; const msg = names.length ? `Atenção ${namesStr} ${temStr} ${revisarCount} ${demStr} com status para revisar — verifique e priorize` : `Atenção: ${revisarCount} ${demStr} com status para revisar — verifique e priorize`; return (<div className="alert-text">{msg}</div>) })()}
+            </div>
+          )}
+          {view==='table' && (
               <div className="table-scroll">
                 <TableView items={itemsVisible.slice(0, tableLimit)} onEdit={onEdit} onStatus={onStatus} cadStatus={cadStatus} onDelete={onDelete} onDuplicate={onDuplicate} hasMore={itemsVisible.length>tableLimit} showMore={()=>setTableLimit(l=> Math.min(l+10, itemsVisible.length))} canCollapse={tableLimit>10} showLess={()=>setTableLimit(10)} shown={Math.min(tableLimit, itemsVisible.length)} total={itemsVisible.length} compact={compact} canEdit={!!user} loading={loading} />
               </div>
@@ -1439,7 +1562,7 @@ export default function App() {
             {view==='calendar' && (
             <CalendarView items={itemsVisible} refDate={calRef} />
             )}
-            <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} designers={designersVisible} cadPlataformas={cadPlataformas} onDelete={onDelete} userLabel={userLabel} canDelete={canDelete} onAddComment={onAddComment} cadOrigens={cadOrigens} currentUser={user?.username||''} />
+            <Modal open={modalOpen} mode={modalMode} onClose={()=>setModalOpen(false)} onSubmit={onSubmit} initial={editing} cadTipos={cadTipos} designers={designersVisible} cadPlataformas={cadPlataformas} onDelete={onDelete} userLabel={userLabel} canDelete={canDelete} onAddComment={onAddComment} cadOrigens={cadOrigens} currentUser={user?.username||''} usersAll={usersAll} canEdit={(user?.role==='admin')} displayUser={displayUser} />
             <FilterModal open={filterOpen} filtros={filtros} setFiltros={setFiltros} designers={designersVisible} onClose={()=>setFilterOpen(false)} cadStatus={cadStatus} cadTipos={cadTipos} origens={cadOrigens} campanhas={campanhas} />
           </div>
             </div>
@@ -1460,6 +1583,26 @@ export default function App() {
         </div>
       </div>
     </div>
+  )
+}
+
+class ErrorBoundary extends React.Component {
+  constructor(props){ super(props); this.state={ hasError:false } }
+  static getDerivedStateFromError(error){ return { hasError:true } }
+  componentDidCatch(error, info){ try{ console.error(error, info) }catch{} }
+  render(){ if(this.state.hasError){ return (
+    <div className="page" style={{padding:20}}>
+      <div className="panel" role="alert">Ocorreu um erro na aplicação.</div>
+      <button className="primary" onClick={()=>{ try{ window.location.reload() }catch{} }}>Recarregar</button>
+    </div>
+  ) } return this.props.children }
+}
+
+export default function App(){
+  return (
+    <ErrorBoundary>
+      <AppInner />
+    </ErrorBoundary>
   )
 }
 function Sidebar({ route, setRoute, allowedRoutes }) {
@@ -1510,6 +1653,7 @@ function UsersView({ users, onCreate, onDelete, onUpdate, role }) {
   const togglePage = async (u, key)=>{ const cur=u.pages||{}; const patch = { pages: { ...cur, [key]: !Boolean(cur[key]) } }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } }
   const toggleAction = async (u, key)=>{ const cur=u.actions||{}; const patch = { actions: { ...cur, [key]: !Boolean(cur[key]) } }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } }
   const updateCargo = async (u, value)=>{ const patch = { cargo: value }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } }
+  const updateRole = async (u, value)=>{ const patch = { role: value }; if (db) { try { await updateDoc(doc(db,'usuarios', u.username||u.id), patch); setList(prev=> prev.map(x=> (x.username===u.username||x.id===u.id) ? { ...x, ...patch } : x)) } catch {} } }
   return (
     <div className="panel users-panel">
       <div className="tabs"><button className="tab active">Usuários</button></div>
@@ -1557,7 +1701,15 @@ function UsersView({ users, onCreate, onDelete, onUpdate, role }) {
             <tr key={u.username}>
               <td>{u.username}</td>
               <td>{u.name||u.username}</td>
-              <td>{u.role||'comum'}</td>
+              <td>
+                {role==='admin' ? (
+                  <select value={u.role||'comum'} onChange={e=> updateRole(u, e.target.value)}>
+                    <option value="comum">Comum</option>
+                    <option value="gerente">Gerente</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                ) : (u.role||'comum')}
+              </td>
               <td>
                 <select value={u.cargo||''} onChange={e=> updateCargo(u, e.target.value)}>
                   <option value="">Selecione</option>
@@ -1570,14 +1722,14 @@ function UsersView({ users, onCreate, onDelete, onUpdate, role }) {
               <td>
                 <div className="chips">
                   {['dashboard','demandas','config','cadastros','relatorios','usuarios'].map(k=> (
-                    <button key={k} className={`btn-md ${(u.pages?.[k]===true) ? 'active' : ''}`} type="button" onClick={()=> togglePage(u, k)}><span className="icon"><Icon name={k==='dashboard'?'dashboard': k==='demandas'?'demandas': k==='config'?'config': k==='cadastros'?'cadastros': k==='relatorios'?'relatorios':'usuarios'} /></span><span>{k==='dashboard'?'Dashboard': k==='demandas'?'Demandas': k==='config'?'Configurações': k==='cadastros'?'Cadastros': k==='relatorios'?'Relatórios':'Usuários'}</span></button>
+                    <button key={k} className={`btn-md ${(u.pages?.[k]===true) ? 'active' : ''}`} type="button" onClick={()=> togglePage(u, k)} disabled={role!=='admin'}><span className="icon"><Icon name={k==='dashboard'?'dashboard': k==='demandas'?'demandas': k==='config'?'config': k==='cadastros'?'cadastros': k==='relatorios'?'relatorios':'usuarios'} /></span><span>{k==='dashboard'?'Dashboard': k==='demandas'?'Demandas': k==='config'?'Configurações': k==='cadastros'?'Cadastros': k==='relatorios'?'Relatórios':'Usuários'}</span></button>
                   ))}
                 </div>
               </td>
               <td>
                 <div className="chips">
                   {[['criar','plus','Criar'], ['excluir','trash','Excluir'], ['visualizar','table','Visualizar']].map(([k,ico,label])=> (
-                    <button key={k} className={`btn-md ${(u.actions?.[k]===true) ? 'active' : ''}`} type="button" onClick={()=> toggleAction(u, k)}><span className="icon"><Icon name={ico} /></span><span>{label}</span></button>
+                    <button key={k} className={`btn-md ${(u.actions?.[k]===true) ? 'active' : ''}`} type="button" onClick={()=> toggleAction(u, k)} disabled={role!=='admin'}><span className="icon"><Icon name={ico} /></span><span>{label}</span></button>
                   ))}
                 </div>
               </td>
