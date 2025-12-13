@@ -1464,7 +1464,7 @@ function AppInner() {
     }, 60000)
     return ()=> clearInterval(timer)
   }, [demandas])
-  const onSubmit = async ({ designer, tipoMidia, titulo, link, arquivoNome, dataSolic, dataCriacao, dataFeedback, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) => {
+  const onSubmit = async ({ designer, tipoMidia, titulo, link, linkDrive, arquivoNome, dataSolic, dataCriacao, dataFeedback, plataforma, arquivos, descricao, prazo, comentarios, historico, origem, campanha }) => {
     const ensureCad = async () => {
       if (!db) return
       const up = async (coll, name)=>{ if (!name) return; try { await setDoc(doc(db, coll, String(name)), { name, active: true }, { merge: true }) } catch {} }
@@ -1507,6 +1507,7 @@ function AppInner() {
       }
       await ensureCad()
       try { await pushAlert(tmpId, 'Demanda salva') } catch {}
+      try { window.alert('Demanda salva com sucesso!') } catch {}
     }
     setModalOpen(false)
     setRoute('demandas')
